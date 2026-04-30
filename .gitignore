@@ -1,0 +1,7 @@
+*.dat
+*.gmad
+*.log
+*.root
+*.csv
+__pycache__/
+.ipynb_checkpoints/
