@@ -1,7 +1,14 @@
-import MuonCooler as mc
+from src import (
+    MuonCoolingChannel,
+    build_coil_beamline,
+    build_dipole_beamline,
+    build_absorber_beamline,
+    build_rf_beamline,
+    render_gmad,
+)
 
 
-channel = mc.MuonCoolingChannel(
+channel = MuonCoolingChannel(
     n_cells            = 10,
     cell_length        = 0.8,
     total_length       = 124.0,
@@ -9,7 +16,6 @@ channel = mc.MuonCoolingChannel(
     reference_momentum = 200.0,
     on_axis_tolerance  = 2e-2,
 )
-
 
 coil_1_template = {
     'name': 'Coil1',
@@ -33,13 +39,13 @@ coil_2_template = {
     'N_sheets': 5,
 }
 
-dipole_template = {                                           
-      'name': 'Dipole',                                         
-      'field_strength': 0.2,                                    
-      'aperture': 0.2,
-      'length_z': 0.1,                                          
-      'enge_coefficient': 5.5,                                  
-  } 
+dipole_template = {
+    'name': 'Dipole',
+    'field_strength': 0.2,
+    'aperture': 0.2,
+    'length_z': 0.1,
+    'enge_coefficient': 5.5,
+}
 
 absorber_template = {
     'name': 'Absorber',
@@ -62,38 +68,32 @@ rf_template = {
 }
 
 
-
-
-# Build the channel
-# z_coils: position of each coil type from cell start [m]
-# coil_templates: ordered to match z_coils
-channel = mc.build_channel_beamline(
-    N_cells=10,
-    L_cell=0.8,
-    z_coils=[0.081, 0.211],           # Coil2 at 81mm, Coil1 at 211mm
+channel = build_coil_beamline(
+    z_coils=[0.081, 0.211],
     coil_templates=[coil_2_template, coil_1_template],
     polarities=[1, 1],
     fixed=True,
     channel=channel,
 )
 
-channel = mc.build_dipole_beamline(n_cells=10, cell_length=0.8, coil_cell_z=0.7,dipole_template=dipole_template, channel=channel)
-channel = mc.build_absorber_beamline(
-    n_cells=10,
-    cell_length=0.8,
+channel = build_dipole_beamline(
+    coil_cell_z=0.7,
+    dipole_template=dipole_template,
+    channel=channel,
+)
+
+channel = build_absorber_beamline(
     absorber_template=absorber_template,
     channel=channel,
 )
 
-channel = mc.build_rf_beamline(
-    n_cells=10,
-    cell_length=0.8,
+channel = build_rf_beamline(
     n_rf_cells=3,
     rf_spacing=0.1946,
     rf_template=rf_template,
     channel=channel,
 )
 
-print(channel.summary())
+channel.summary()
 
-mc.render_gmad(channel, "channel.tpl", "channel.gmad", n_samplers=10)
+render_gmad(channel, "templates/channel.tpl", "channel.gmad", n_samplers=10)
