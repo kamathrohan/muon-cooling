@@ -21,21 +21,7 @@ from src import (
 
 ---
 
-## 2. Remove reliance on module-level objects
-
-`CoolingPancakes.py` created these at import time — they no longer exist:
-
-- `coil_1_template` dict
-- `coil_2_template` dict
-- `channel` (`Beamline` object)
-- `print("Beamline classes loaded.")` side effect
-
-If your script used any of them without redefining them, copy the definitions
-from `CoolingPancakes.py` lines 347–380 into your own file.
-
----
-
-## 3. Replace `Beamline` with `MuonCoolingChannel`
+## 2. Replace `Beamline` with `MuonCoolingChannel`
 
 Wherever you created a top-level `Beamline` to hold the full cooling channel,
 replace it with `MuonCoolingChannel`. `MuonCoolingChannel` is a subclass of
@@ -59,7 +45,7 @@ channel = MuonCoolingChannel(
 
 ---
 
-## 4. `build_channel_beamline` renamed to `build_coil_beamline` — call pattern also changed
+## 3. `build_channel_beamline` renamed to `build_coil_beamline` — call pattern also changed
 
 The old version took positional arguments and returned a plain `Beamline`.
 The new version is renamed, takes keyword arguments, accepts an existing `MuonCoolingChannel`
@@ -90,22 +76,7 @@ channel = build_coil_beamline(
 
 ---
 
-## 5. Anywhere you passed the channel to a standalone function
-
-The old `build_pancake_dataframe` was a standalone function; it is now a
-method. If any downstream code (optimiser, renderer, notebook) called it:
-
-```python
-# BEFORE
-df = build_pancake_dataframe(beamline)
-
-# AFTER
-df = channel.build_pancake_dataframe()
-```
-
----
-
-## 6. Coil templates — add `material` if overriding
+## 4. Coil templates — add `material` if overriding
 
 The `SolenoidCoil` constructor gained a `material` parameter (default
 `"G4_Cu"`). Existing template dicts and `SolenoidCoil(...)` calls work
@@ -113,12 +84,11 @@ unchanged; only add `"material"` if you need a different conductor material.
 
 ---
 
-## 7. Summary of name changes
+## 5. Summary of name changes
 
 | Old | New |
 |---|---|
 | `from CoolingPancakes import ...` | `from src import ...` |
 | `Beamline(name=...)` as top-level container | `MuonCoolingChannel(n_cells, cell_length, total_length, total_width, reference_momentum, ...)` |
 | `build_channel_beamline(N, L, z, tmpls, ...)` positional | `build_coil_beamline(z_coils=..., coil_templates=..., channel=channel)` kwargs — **renamed + new signature** |
-| `build_pancake_dataframe(beamline)` standalone | `channel.build_pancake_dataframe()` method |
 | No GMAD output | `render_gmad(channel, "templates/channel.tpl", "channel.gmad")` |
