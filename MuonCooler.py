@@ -49,12 +49,14 @@ class SolenoidCoil(BeamlineElement):
                  L: float = None,
                  N_pancakes: int = 1, L_pancake: float = None, L_spacing: float = 0.0,
                  currDensity: float = None, Itot: float = None,
-                 N_sheets: int = 10, fixed: bool = False, name: Optional[str] = None):
+                 N_sheets: int = 10, fixed: bool = False, name: Optional[str] = None,
+                 material: str = "G4_Cu"):
         super().__init__(z_center, name)
         self.r_in = r_in
         self.r_thick = r_thick
         self.N_sheets = N_sheets
         self.fixed = fixed
+        self.material = material
         
         # --- Geometry ---
         if L is not None and L_pancake is not None:
@@ -348,6 +350,37 @@ class Beamline:
         for i, elem in enumerate(self.elements):
             print(f"[{i}] {elem}")
 
+    def build_pancake_dataframe(self) -> pd.DataFrame:
+        """Return a DataFrame with one row per sub-pancake across all SolenoidCoils."""
+        rows = []
+        for coil_idx, elem in enumerate(self.elements):
+            if not isinstance(elem, SolenoidCoil):
+                continue
+            centers = elem._pancake_centers()
+            polarity = 1 if elem._Itot_per_pancake >= 0 else -1
+            for p_idx, z_p in enumerate(centers):
+                rows.append({
+                    'coil_name':     f"{elem.name}_p{p_idx}",
+                    'coil_index':    coil_idx,
+                    'pancake_index': p_idx,
+                    'z_center':      z_p,
+                    'z_coil_center': elem.z_center,
+                    'Itot_pancake':  elem._Itot_per_pancake,
+                    'currDensity':   elem.currDensity,
+                    'polarity':      polarity,
+                    'r_in':          elem.r_in,
+                    'r_thick':       elem.r_thick,
+                    'L_pancake':     elem.L_pancake,
+                    'fixed':         elem.fixed,
+                    'material':      elem.material,
+                    'coil_offset_x': 0.0,
+                    'coil_offset_y': 0.0,
+                    'coil_tilt_x':   0.0,
+                    'coil_tilt_y':   0.0,
+                    'coil_tilt_z':   0.0,
+                })
+        return pd.DataFrame(rows)
+
 
 class MuonCoolingChannel(Beamline):
     def __init__(
@@ -362,6 +395,8 @@ class MuonCoolingChannel(Beamline):
         dipole_field_model: str = "dipole",
         interpolator: str = "linear",
         electric_field_model: str = "rfpillbox",
+        reference_momentum: float = 200.0,
+        on_axis_tolerance: float = 2e-2,
     ):
         super().__init__(name)
         self.n_cells = n_cells
@@ -375,6 +410,8 @@ class MuonCoolingChannel(Beamline):
         self.dipole_field_model = dipole_field_model
         self.interpolator = interpolator
         self.electric_field_model = electric_field_model
+        self.reference_momentum = reference_momentum
+        self.on_axis_tolerance = on_axis_tolerance
 
     def __repr__(self):
         return (f"MuonCoolingChannel(name='{self.name}', n_cells={self.n_cells}, "
@@ -500,7 +537,8 @@ def build_channel_beamline(N_cells=None, L_cell=None, z_coils=None, coil_templat
             currDensity=J,
             N_sheets=tmpl.get('N_sheets', 10),
             fixed=fixed,
-            name=f"{tmpl['name']}_{i}"
+            name=f"{tmpl['name']}_{i}",
+            material=tmpl.get('material', 'G4_Cu'),
         )
         channel.add_element(coil)
     
@@ -661,75 +699,118 @@ def build_rf_beamline(n_cells=None, cell_length=None, n_rf_cells=None, rf_spacin
 
 
 
-def build_pancake_dataframe(beamline: Beamline) -> pd.DataFrame:
-    """Return a DataFrame with one row per sub-pancake across all SolenoidCoils.
 
-    Columns
+def generate_sampler_lines(n_samplers: int,
+                           total_length_m: float,
+                           aper_m: float = 5.0,
+                           reference_element: str = "mc1",
+                           reference_element_number: int = 0) -> str:
+    """Generate BDSIM samplerplacement lines evenly spaced across the channel.
+
+    Parameters
+    ----------
+    n_samplers              : int   - Number of samplers to place
+    total_length_m          : float - Full channel length [m]; samplers span ±half
+    aper_m                  : float - Rectangular aperture half-size [m]
+    reference_element       : str   - BDSIM element name to reference
+    reference_element_number: int   - referenceElementNumber value
+
+    Returns
     -------
-    coil_name       : str   - Name of the parent coil
-    coil_index      : int   - Index of coil in beamline
-    pancake_index   : int   - Index of pancake within its coil (0-based)
-    z_center        : float - Axial center of this pancake [m]
-    z_coil_center   : float - Axial center of the parent coil [m]
-    Itot_pancake    : float - Total current in this pancake [A]
-    currDensity     : float - Current density [A/mm²]
-    polarity        : int   - Sign of the current (+1 or -1)
-    r_in            : float - Inner radius [m]
-    r_thick         : float - Radial thickness [m]
-    L_pancake       : float - Axial length of pancake [m]
-    fixed           : bool  - Whether this coil is held fixed during matching
+    str - Multi-line BDSIM sampler placement block
     """
-    rows = []
-    for coil_idx, elem in enumerate(beamline.elements):
-        if not isinstance(elem, SolenoidCoil):
-            continue
-        centers = elem._pancake_centers()
-        polarity = 1 if elem._Itot_per_pancake >= 0 else -1
-        for p_idx, z_p in enumerate(centers):
-            rows.append({
-                'coil_name':     f"{elem.name}_p{p_idx}",
-                'coil_index':    coil_idx,
-                'pancake_index': p_idx,
-                'z_center':      z_p,
-                'z_coil_center': elem.z_center,
-                'Itot_pancake':  elem._Itot_per_pancake,
-                'currDensity':   elem.currDensity,
-                'polarity':      polarity,
-                'r_in':          elem.r_in,
-                'r_thick':       elem.r_thick,
-                'L_pancake':     elem.L_pancake,
-                'fixed':         elem.fixed,
-                'coil_offset_x': 0.0,
-                'coil_offset_y': 0.0,
-                'coil_tilt_x':   0.0,
-                'coil_tilt_y':   0.0,
-                'coil_tilt_z':   0.0,
-            })
-    return pd.DataFrame(rows)
+    half_mm = total_length_m / 2 * 1e3
+    positions = np.linspace(-half_mm, half_mm, n_samplers)
+    lines = []
+    for i, s in enumerate(positions, 1):
+        lines.append(
+            f's{i}: samplerplacement, referenceElement="{reference_element}", '
+            f'referenceElementNumber={reference_element_number}, '
+            f's={s:.1f}*mm, shape="rectangular",'
+            f'aper1={aper_m}*m, aper2={aper_m}*m;'
+        )
+    return '\n'.join(lines)
 
 
+def generate_beam_block(mode: str,
+                        particle: str = "mu+",
+                        momentum_MeV: float = 200.0,
+                        x0_mm: float = 0.0,
+                        y0_mm: float = 0.0,
+                        z0_m: float = 0.0,
+                        distr_type: str = "userfile",
+                        distr_file: str = "",
+                        distr_file_format: str = "t[ns]:x[m]:y[m]:z[m]:xp[rad]:yp[rad]:zp[rad]:-:E[GeV]",
+                        nlines_ignore: int = 1) -> str:
+    """Generate a BDSIM beam block.
 
+    Parameters
+    ----------
+    mode             : str   - One of 'reference', 'offset', or 'beam'
+                               'reference' : particle + momentum only
+                               'offset'    : particle + momentum + X0/Y0/Z0
+                               'beam'      : particle + momentum + distribution file
+    particle         : str   - Particle type (default "mu+")
+    momentum_MeV     : float - Reference momentum [MeV/c]
+    x0_mm, y0_mm     : float - Transverse offsets [mm] (offset mode)
+    z0_m             : float - Longitudinal offset [m] (offset mode)
+    distr_type       : str   - BDSIM distribution type (beam mode)
+    distr_file       : str   - Path to distribution file (beam mode)
+    distr_file_format: str   - Column format string (beam mode)
+    nlines_ignore    : int   - Header lines to skip in distribution file (beam mode)
+
+    Returns
+    -------
+    str - BDSIM beam command block
+    """
+    if mode == "reference":
+        return (
+            f'beam, particle="{particle}",\n'
+            f'      momentum={momentum_MeV}*MeV;'
+        )
+    elif mode == "offset":
+        return (
+            f'beam, particle="{particle}",\n'
+            f'      momentum={momentum_MeV}*MeV,\n'
+            f'      X0={x0_mm}*mm,\n'
+            f'      Y0={y0_mm}*mm,\n'
+            f'      Z0={z0_m}*m;'
+        )
+    elif mode == "beam":
+        return (
+            f'beam, particle="{particle}",\n'
+            f'      momentum={momentum_MeV}*MeV,\n'
+            f'      distrType="{distr_type}",\n'
+            f'      distrFile="{distr_file}",\n'
+            f'      distrFileFormat = "{distr_file_format}",\n'
+            f'      nlinesIgnore={nlines_ignore};'
+        )
+    else:
+        raise ValueError(f"Unknown beam mode '{mode}'. Choose 'reference', 'offset', or 'beam'.")
+
+
+MUON_MASS_MEV_C2 = 105.66
 
 def render_gmad(beamline: MuonCoolingChannel,
                 tpl_path: str,
                 out_gmad: str,
-                momentum_MeV_c: float = 200.0,
-                mass_MeV_c: float = 105.66) -> None:
+                n_samplers: int = 129,
+                sampler_aper_m: float = 5.0,
+                beam_mode: str = "beam",
+                beam_kwargs: dict = None) -> None:
     """Render a full channel gmad from channel.tpl and a MuonCoolingChannel object.
 
     Parameters
     ----------
-    beamline       : MuonCoolingChannel - channel with Solenoid/Dipole/Absorber/RFCavity elements
-    tpl_path       : str          - path to channel.tpl
-    out_gmad       : str          - output gmad path
-    momentum_MeV_c : float        - reference momentum for RF time offsets [MeV/c]
-    mass_MeV_c     : float        - particle mass [MeV/c^2]
+    beamline : MuonCoolingChannel - channel with Solenoid/Dipole/Absorber/RFCavity elements
+    tpl_path : str          - path to channel.tpl
+    out_gmad : str          - output gmad path
     """
     from jinja2 import Template
 
-    beamline.compute_rf_time_offsets(momentum_MeV_c, mass_MeV_c)
+    beamline.compute_rf_time_offsets(beamline.reference_momentum, MUON_MASS_MEV_C2)
 
-    pancake_df = build_pancake_dataframe(beamline)
+    pancake_df = beamline.build_pancake_dataframe()
     df = pancake_df.sort_values(['coil_index', 'pancake_index']).reset_index(drop=True)
 
     dipoles   = [e for e in beamline.elements if isinstance(e, Dipole)]
@@ -737,26 +818,36 @@ def render_gmad(beamline: MuonCoolingChannel,
     rf_cavs   = [e for e in beamline.elements if isinstance(e, RFCavity)]
 
     def fmt_array(values, fmt='.6g'):
-        return '{' + ', '.join(format(v, fmt) for v in values) + '}'
+        formatted = [format(v, fmt) for v in values]
+        if len(set(formatted)) == 1:
+            return '{' + formatted[0] + '}'
+        return '{' + ', '.join(formatted) + '}'
 
     def fmt_mm_array(values_m):
-        return '{' + ', '.join(f'{v*1e3:.4f}*mm' for v in values_m) + '}'
+        formatted = [f'{v*1e3:.4f}*mm' for v in values_m]
+        if len(set(formatted)) == 1:
+            return '{' + formatted[0] + '}'
+        return '{' + ', '.join(formatted) + '}'
 
     def fmt_str_array(values):
+        if len(set(values)) == 1:
+            return '{"' + values[0] + '"}'
         return '{' + ', '.join(f'"{v}"' for v in values) + '}'
 
     n_coils = len(df)
     context = {
         # channel properties
-        'total_length': beamline.total_length,
-        'total_width':  beamline.total_width,
+        'total_length':      beamline.total_length,
+        'total_width':       beamline.total_width,
+        'on_axis_tolerance': beamline.on_axis_tolerance,
+        'coil_material':     fmt_str_array(list(df['material'])),
 
         # channel field models
-        'magnetic_field_model': beamline.magnetic_field_model,
+        'magnetic_field_model':  beamline.magnetic_field_model,
         'magnetic_field_method': beamline.magnetic_field_method,
-        'dipole_field_model': beamline.dipole_field_model,
-        'interpolator': beamline.interpolator,
-        'electric_field_model': beamline.electric_field_model,
+        'dipole_field_model':    beamline.dipole_field_model,
+        'interpolator':          beamline.interpolator,
+        'electric_field_model':  beamline.electric_field_model,
 
         # coils
         'n_coils':               n_coils,
@@ -810,6 +901,13 @@ def render_gmad(beamline: MuonCoolingChannel,
         'rf_cavity_thickness':    fmt_mm_array([r.cavity_thickness for r in rf_cavs]),
     }
 
+    context['sampler_lines'] = generate_sampler_lines(
+        n_samplers, beamline.total_length, aper_m=sampler_aper_m
+    )
+    context['beam_block'] = generate_beam_block(
+        beam_mode, momentum_MeV=beamline.reference_momentum, **(beam_kwargs or {})
+    )
+
     with open(tpl_path) as f:
         rendered = Template(f.read()).render(**context)
 
@@ -817,7 +915,8 @@ def render_gmad(beamline: MuonCoolingChannel,
         f.write(rendered)
 
     print(f"Written {out_gmad}: {n_coils} coils, {len(dipoles)} dipoles, "
-          f"{len(absorbers)} absorbers, {len(rf_cavs)} RF cavities")
+          f"{len(absorbers)} absorbers, {len(rf_cavs)} RF cavities, "
+          f"{n_samplers} samplers")
 
 
 

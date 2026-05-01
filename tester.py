@@ -1,7 +1,14 @@
 import MuonCooler as mc
 
 
-channel = mc.MuonCoolingChannel(n_cells = 10, cell_length  = 0.8, total_length = 124.0, total_width = 0.8)
+channel = mc.MuonCoolingChannel(
+    n_cells            = 10,
+    cell_length        = 0.8,
+    total_length       = 124.0,
+    total_width        = 0.8,
+    reference_momentum = 200.0,
+    on_axis_tolerance  = 2e-2,
+)
 
 
 coil_1_template = {
@@ -89,4 +96,4 @@ channel = mc.build_rf_beamline(
 
 print(channel.summary())
 
-mc.render_gmad(channel, "channel.tpl", "channel.gmad")
+mc.render_gmad(channel, "channel.tpl", "channel.gmad", n_samplers=10)
