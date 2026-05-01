@@ -9,12 +9,12 @@ from src import (
 
 
 channel = MuonCoolingChannel(
-    n_cells            = 10,
-    cell_length        = 0.8,
-    total_length       = 124.0,
+    n_cells            = 151,
+    cell_length        = 1.0,
+    total_length       = 170.0,
     total_width        = 0.8,
     reference_momentum = 200.0,
-    on_axis_tolerance  = 2e-2,
+    on_axis_tolerance  = 2e-5,
 )
 
 coil_1_template = {
@@ -77,11 +77,11 @@ channel = build_coil_beamline(
 )
 
 channel = build_dipole_beamline(
-    coil_cell_z=0.7,
+    coil_cell_z=0.025,
     dipole_template=dipole_template,
     channel=channel,
 )
-
+"""
 channel = build_absorber_beamline(
     absorber_template=absorber_template,
     channel=channel,
@@ -94,6 +94,10 @@ channel = build_rf_beamline(
     channel=channel,
 )
 
+"""
+
+
 channel.summary()
 
-render_gmad(channel, "templates/channel.tpl", "channel.gmad", n_samplers=10)
+render_gmad(channel, "templates/channel.tpl", "output/channel.gmad", n_samplers=120,sampler_start_m=-3, sampler_end_m=3, beam_mode="beam", beam_kwargs={"distr_file": "beam_bdsim.dat"})
+print(channel.getCellStarts())

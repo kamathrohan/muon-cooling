@@ -9,6 +9,9 @@ class BeamlineElement:
         self.z_center = z_center
         self.name = name or f"Element@{z_center:.3f}m"
 
+    def get_z(self, offset: float = 0.0) -> float:
+        return self.z_center + offset
+
     def get_field(self, z: np.ndarray) -> np.ndarray:
         raise NotImplementedError("Subclasses must implement get_field()")
 

@@ -8,26 +8,33 @@ MUON_MASS_MEV_C2 = 105.66
 
 
 def generate_sampler_lines(n_samplers: int,
-                           total_length_m: float,
+                           total_length_m: float = None,
                            aper_m: float = 5.0,
                            reference_element: str = "mc1",
-                           reference_element_number: int = 0) -> str:
+                           reference_element_number: int = 0,
+                           start_m: float = None,
+                           end_m: float = None) -> str:
     """Generate BDSIM samplerplacement lines evenly spaced across the channel.
 
     Parameters
     ----------
     n_samplers              : int   - Number of samplers to place
-    total_length_m          : float - Full channel length [m]; samplers span ±half
+    total_length_m          : float - Full channel length [m]; samplers span ±half (ignored if start_m/end_m given)
     aper_m                  : float - Rectangular aperture half-size [m]
     reference_element       : str   - BDSIM element name to reference
     reference_element_number: int   - referenceElementNumber value
+    start_m                 : float - Start position [m]; overrides total_length_m
+    end_m                   : float - End position [m]; overrides total_length_m
 
     Returns
     -------
     str - Multi-line BDSIM sampler placement block
     """
-    half_mm = total_length_m / 2 * 1e3
-    positions = np.linspace(-half_mm, half_mm, n_samplers)
+    if start_m is not None and end_m is not None:
+        positions = np.linspace(start_m * 1e3, end_m * 1e3, n_samplers)
+    else:
+        half_mm = total_length_m / 2 * 1e3
+        positions = np.linspace(-half_mm, half_mm, n_samplers)
     lines = []
     for i, s in enumerate(positions, 1):
         lines.append(
@@ -101,6 +108,8 @@ def render_gmad(beamline: MuonCoolingChannel,
                 out_gmad: str,
                 n_samplers: int = 129,
                 sampler_aper_m: float = 5.0,
+                sampler_start_m: float = None,
+                sampler_end_m: float = None,
                 beam_mode: str = "beam",
                 beam_kwargs: dict = None) -> None:
     """Render a full channel gmad from templates/channel.tpl and a MuonCoolingChannel object.
@@ -121,18 +130,24 @@ def render_gmad(beamline: MuonCoolingChannel,
     rf_cavs   = [e for e in beamline.elements if isinstance(e, RFCavity)]
 
     def fmt_array(values, fmt='.6g'):
+        if len(values) == 0:
+            return '{0.0}'
         formatted = [format(v, fmt) for v in values]
         if len(set(formatted)) == 1:
             return '{' + formatted[0] + '}'
         return '{' + ', '.join(formatted) + '}'
 
     def fmt_mm_array(values_m):
+        if len(values_m) == 0:
+            return '{0.0*mm}'
         formatted = [f'{v*1e3:.4f}*mm' for v in values_m]
         if len(set(formatted)) == 1:
             return '{' + formatted[0] + '}'
         return '{' + ', '.join(formatted) + '}'
 
     def fmt_str_array(values):
+        if len(values) == 0:
+            return '{"G4_U"}'
         if len(set(values)) == 1:
             return '{"' + values[0] + '"}'
         return '{' + ', '.join(f'"{v}"' for v in values) + '}'
@@ -205,7 +220,8 @@ def render_gmad(beamline: MuonCoolingChannel,
     }
 
     context['sampler_lines'] = generate_sampler_lines(
-        n_samplers, beamline.total_length, aper_m=sampler_aper_m
+        n_samplers, beamline.total_length, aper_m=sampler_aper_m,
+        start_m=sampler_start_m, end_m=sampler_end_m,
     )
     context['beam_block'] = generate_beam_block(
         beam_mode, momentum_MeV=beamline.reference_momentum, **(beam_kwargs or {})

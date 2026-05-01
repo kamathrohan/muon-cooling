@@ -9,3 +9,4 @@ from .builders import (
     build_rf_beamline,
 )
 from .render import generate_sampler_lines, generate_beam_block, render_gmad, MUON_MASS_MEV_C2
+from .translate import g4bl_to_beamgen

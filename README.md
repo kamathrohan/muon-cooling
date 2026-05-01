@@ -1,6 +1,6 @@
 # muon-cooling
 
-Python toolkit for designing and rendering muon ionization cooling channels as BDSIM input files. It provides a class hierarchy for beamline elements, periodic-channel builder functions, and a Jinja2-based GMAD renderer.
+Python toolkit for designing and rendering muon ionization cooling channels as BDSIM input files. It provides a class hierarchy for beamline elements, periodic-channel builder functions, a Jinja2-based GMAD renderer, and a beam-file translation utility.
 
 ---
 
@@ -18,7 +18,8 @@ Python toolkit for designing and rendering muon ionization cooling channels as B
 6. [DataFrame Introspection](#dataframe-introspection)
 7. [GMAD Rendering](#gmad-rendering)
 8. [Template System](#template-system)
-9. [Quickstart](#quickstart)
+9. [Beam File Translation](#beam-file-translation)
+10. [Quickstart](#quickstart)
 
 ---
 
@@ -172,7 +173,7 @@ RFCavity(
 )
 ```
 
-`time_offset` is normally set automatically by `Beamline.compute_rf_time_offsets()` — see below.
+`time_offset` is normally set automatically by `MuonCoolingChannel.compute_rf_time_offsets()` — see below.
 
 ---
 
@@ -195,21 +196,6 @@ fig, ax = bl.plot_field(z_range=(z_min, z_max), n_points=1000)
 bl.summary()                          # print element table
 ```
 
-#### compute_rf_time_offsets
-
-Sets `time_offset` on every `RFCavity` to synchronize it with a reference particle:
-
-```python
-offsets = bl.compute_rf_time_offsets(
-    momentum_MeV_c = 200.0,   # reference muon momentum [MeV/c]
-    mass_MeV_c     = 105.66,  # muon rest mass [MeV/c²]
-    z_ref          = None,    # reference z; defaults to leftmost element
-)
-# returns dict: {cavity_name: time_offset_ns, ...}
-```
-
-Transit time is computed as `t = (z_cavity - z_ref) / (β c)`.
-
 ---
 
 ### MuonCoolingChannel
@@ -230,8 +216,38 @@ channel = MuonCoolingChannel(
     electric_field_model : str   = "rfpillbox",
     reference_momentum   : float = 200.0,  # [MeV/c]
     on_axis_tolerance    : float = 2e-2,
+    polarities           : list[int] = None,  # default [1, -1, -1, 1]
 )
 ```
+
+`polarities` controls the sign pattern used by `getCellStarts()` and `build_absorber_beamline`. Defaults to `[1, -1, -1, 1]`.
+
+#### compute_rf_time_offsets
+
+Sets `time_offset` on every `RFCavity` to synchronize it with a reference particle entering at `beam_start`:
+
+```python
+offsets = channel.compute_rf_time_offsets(
+    momentum_MeV_c = 200.0,   # reference muon momentum [MeV/c]
+    beam_start     = 0.0,     # global z where beam enters [m]
+    mass_MeV_c     = 105.66,  # muon rest mass [MeV/c²]
+)
+# returns dict: {cavity_name: time_offset_ns, ...}
+```
+
+Transit time is computed as `t_i = (z_i_global - beam_start) / (β c)`, where `z_i_global` accounts for the channel's global z offset (`total_length / 2`).
+
+#### getCellStarts
+
+Returns the global z position and wedge-polarity sign at the start of each cell:
+
+```python
+starts = channel.getCellStarts()
+# returns [[z_global, sign], ...] where sign is '+' or '-'
+# e.g. [[85.0, '+'], [86.0, '-'], ...]
+```
+
+Cell starts are evenly spaced across the full channel length, offset to global coordinates via `total_length / 2`. The polarity sign is derived from `self.polarities` using the same stride logic as `build_absorber_beamline`.
 
 ---
 
@@ -324,6 +340,8 @@ z_list = coil_placement_z(n_cells, cell_length, coil_cell_z)
 
 Each element type has a corresponding DataFrame builder on `Beamline`/`MuonCoolingChannel`. These are useful for inspection, export, and debugging — the render pipeline uses `build_pancake_dataframe` internally.
 
+All per-element DataFrames accept an optional `global_z_offset` keyword (default `0.0`) that shifts z columns into a global coordinate frame.
+
 ### build_pancake_dataframe
 
 One row per sub-pancake across all `SolenoidCoil` elements.
@@ -341,8 +359,8 @@ df = channel.build_pancake_dataframe()
 One row per `Dipole`.
 
 ```python
-df = channel.build_dipole_dataframe()
-# Columns: name, element_index, z_center, field_strength, aperture,
+df = channel.build_dipole_dataframe(global_z_offset=0.0)
+# Columns: name, z_local, z_global, field_strength, aperture,
 #          length_z, enge_coefficient, fixed
 ```
 
@@ -351,8 +369,8 @@ df = channel.build_dipole_dataframe()
 One row per `Absorber`.
 
 ```python
-df = channel.build_absorber_dataframe()
-# Columns: name, element_index, z_center, absorber_type, material,
+df = channel.build_absorber_dataframe(global_z_offset=0.0)
+# Columns: name, z_local, z_global, absorber_type, material,
 #          cylinder_length, cylinder_radius, wedge_opening_angle,
 #          wedge_height, wedge_rotation_angle, wedge_offset_x,
 #          wedge_offset_y, wedge_apex_to_base, fixed
@@ -363,11 +381,20 @@ df = channel.build_absorber_dataframe()
 One row per `RFCavity`.
 
 ```python
-df = channel.build_rf_dataframe()
-# Columns: name, element_index, z_center, time_offset, length, voltage,
+df = channel.build_rf_dataframe(global_z_offset=0.0)
+# Columns: name, z_local, z_global, time_offset, length, voltage,
 #          phase, frequency, window_thickness, window_material,
 #          window_radius, cavity_material, cavity_vacuum_material,
 #          cavity_radius, cavity_thickness, fixed
+```
+
+### build_elements_dataframe
+
+One row per element of any type — useful for a quick overview of the full beamline.
+
+```python
+df = channel.build_elements_dataframe(global_z_offset=0.0)
+# Columns: name, type, z_local, z_global
 ```
 
 ---
@@ -378,13 +405,15 @@ df = channel.build_rf_dataframe()
 
 ```python
 render_gmad(
-    beamline     : MuonCoolingChannel,
-    tpl_path     : str,             # path to templates/channel.tpl
-    out_gmad     : str,             # output path
-    n_samplers   : int   = 129,     # number of samplerplacement elements
-    sampler_aper_m: float = 5.0,    # sampler aperture half-size [m]
-    beam_mode    : str   = "beam",  # "reference", "offset", or "beam"
-    beam_kwargs  : dict  = None,    # extra kwargs forwarded to generate_beam_block
+    beamline        : MuonCoolingChannel,
+    tpl_path        : str,             # path to templates/channel.tpl
+    out_gmad        : str,             # output path
+    n_samplers      : int   = 129,     # number of samplerplacement elements
+    sampler_aper_m  : float = 5.0,     # sampler aperture half-size [m]
+    sampler_start_m : float = None,    # sampler range start [m]; overrides ±total_length/2
+    sampler_end_m   : float = None,    # sampler range end [m]; overrides ±total_length/2
+    beam_mode       : str   = "beam",  # "reference", "offset", or "beam"
+    beam_kwargs     : dict  = None,    # extra kwargs forwarded to generate_beam_block
 )
 ```
 
@@ -400,14 +429,16 @@ It automatically:
 ```python
 lines = generate_sampler_lines(
     n_samplers               : int,
-    total_length_m           : float,
+    total_length_m           : float = None,  # ignored if start_m/end_m given
     aper_m                   : float = 5.0,
     reference_element        : str   = "mc1",
     reference_element_number : int   = 0,
+    start_m                  : float = None,  # explicit range start [m]
+    end_m                    : float = None,  # explicit range end [m]
 )
 ```
 
-Returns a multi-line string of `samplerplacement` BDSIM commands evenly spaced across `±total_length_m/2`.
+Returns a multi-line string of `samplerplacement` BDSIM commands. When `start_m` and `end_m` are both given they take precedence over `total_length_m`; otherwise samplers span `±total_length_m/2`.
 
 ### generate_beam_block
 
@@ -445,6 +476,34 @@ To customize the template, edit `templates/channel.tpl` directly. All scalar/arr
 
 ---
 
+## Beam File Translation
+
+`src/translate.py` provides a utility for converting G4Beamline output into the format expected by `highemittanceBeamGen` (and the BDSIM `userfile` beam distribution).
+
+### g4bl_to_beamgen
+
+```python
+from src import g4bl_to_beamgen
+
+n = g4bl_to_beamgen(
+    input_path  : str,              # path to G4BL BLTrackFile (beam.tmp)
+    output_path : str,              # path to write beamgen file
+    mass_MeV    : float = 105.66,  # particle rest mass [MeV/c²] (default: muon)
+    z_override  : float = None,    # if set, replace all Z values with this constant [m]
+)
+# returns int — number of particles written
+```
+
+**Input** (G4BL BLTrackFile): `x y z Px Py Pz t PDGid EvNum TrkId Parent weight`
+- positions in [mm], momenta in [MeV/c], time in [ns]
+
+**Output** (beamgen / BDSIM userfile): `T X Y Z xp yp zp P E`
+- `T` [ns], `X Y Z` [m], `xp yp zp` direction cosines, `P` [GeV/c], `E` [GeV]
+
+Column names are read from the `#`-prefixed header in the G4BL file; if absent, the default G4BL column order is assumed. `z_override` is useful for placing the entire beam at a fixed z entry point regardless of what the tracking output recorded.
+
+---
+
 ## Quickstart
 
 ```python
@@ -460,11 +519,11 @@ from src import (
 # 1. Create the channel
 channel = MuonCoolingChannel(
     n_cells            = 10,
-    cell_length        = 0.8,
-    total_length       = 124.0,
+    cell_length        = 1.0,
+    total_length       = 170.0,
     total_width        = 0.8,
     reference_momentum = 200.0,
-    on_axis_tolerance  = 2e-2,
+    on_axis_tolerance  = 2e-5,
 )
 
 # 2. Define element templates
@@ -500,7 +559,7 @@ channel = build_coil_beamline(
     z_coils=[0.081, 0.211], coil_templates=[coil_2_template, coil_1_template],
     polarities=[1, 1], fixed=True, channel=channel,
 )
-channel = build_dipole_beamline(coil_cell_z=0.7, dipole_template=dipole_template, channel=channel)
+channel = build_dipole_beamline(coil_cell_z=0.025, dipole_template=dipole_template, channel=channel)
 channel = build_absorber_beamline(absorber_template=absorber_template, channel=channel)
 channel = build_rf_beamline(n_rf_cells=3, rf_spacing=0.1946, rf_template=rf_template, channel=channel)
 
@@ -508,13 +567,32 @@ channel = build_rf_beamline(n_rf_cells=3, rf_spacing=0.1946, rf_template=rf_temp
 channel.summary()
 print(channel.build_pancake_dataframe())
 print(channel.build_rf_dataframe())
+print(channel.getCellStarts())
 
-# 5. Render to GMAD
-render_gmad(channel, "templates/templates/channel.tpl", "channel.gmad", n_samplers=10)
+# 5. Render to GMAD — restrict samplers to a ±3 m window around the channel centre
+render_gmad(
+    channel,
+    "templates/channel.tpl",
+    "output/channel.gmad",
+    n_samplers=120,
+    sampler_start_m=-3,
+    sampler_end_m=3,
+    beam_mode="beam",
+    beam_kwargs={"distr_file": "beam_bdsim.dat"},
+)
 ```
 
-This produces `channel.gmad`, which can be run directly with BDSIM:
+This produces `output/channel.gmad`, which can be run directly with BDSIM:
 
 ```bash
-bdsim --file=channel.gmad --outfile=output --ngenerate=1000
+bdsim --file=output/channel.gmad --outfile=output --ngenerate=1000
+```
+
+### Translating a G4Beamline beam file
+
+```python
+from src import g4bl_to_beamgen
+
+n = g4bl_to_beamgen("beam.tmp", "beam_bdsim.dat", z_override=0.0)
+print(f"Wrote {n} particles to beam_bdsim.dat")
 ```

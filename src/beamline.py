@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from typing import List, Dict, Optional
 
-from .elements import BeamlineElement, SolenoidCoil, RFCavity
+from .elements import BeamlineElement, SolenoidCoil, RFCavity, Absorber, Dipole
 
 
 class Beamline:
@@ -75,39 +75,6 @@ class Beamline:
     def __repr__(self):
         return f"Beamline(name='{self.name}', n_elements={len(self.elements)})"
 
-    def compute_rf_time_offsets(self, momentum_MeV_c: float,
-                                mass_MeV_c: float = 105.66,
-                                z_ref: float = None) -> Dict[str, float]:
-        """Compute and set time_offset on every RFCavity from transit time.
-
-        t_i = (z_i - z_ref) / (beta * c)
-
-        Parameters
-        ----------
-        momentum_MeV_c : float - Reference particle momentum [MeV/c]
-        mass_MeV_c     : float - Particle rest mass [MeV/c²] (default: muon)
-        z_ref          : float - Reference z [m]; defaults to leftmost element.
-
-        Returns
-        -------
-        dict mapping cavity name -> time_offset [ns]
-        """
-        C_M_PER_NS = 0.299792458  # speed of light [m/ns]
-
-        E    = math.sqrt(momentum_MeV_c**2 + mass_MeV_c**2)
-        beta = momentum_MeV_c / E
-
-        if z_ref is None:
-            z_ref = min(e.z_center for e in self.elements)
-
-        offsets = {}
-        for elem in self.elements:
-            if isinstance(elem, RFCavity):
-                elem.time_offset = (elem.z_center - z_ref) / (beta * C_M_PER_NS)
-                offsets[elem.name] = elem.time_offset
-
-        return offsets
-
     def summary(self):
         print(f"\n{self.name}")
         print("=" * 60)
@@ -146,6 +113,86 @@ class Beamline:
                 })
         return pd.DataFrame(rows)
 
+    def build_rf_dataframe(self, global_z_offset: float = 0.0) -> pd.DataFrame:
+        """Return a DataFrame with one row per RFCavity."""
+        rows = []
+        for elem in self.elements:
+            if not isinstance(elem, RFCavity):
+                continue
+            rows.append({
+                'name':                   elem.name,
+                'z_local':                elem.z_center,
+                'z_global':               elem.z_center + global_z_offset,
+                'time_offset':            elem.time_offset,
+                'length':                 elem.length,
+                'voltage':                elem.voltage,
+                'phase':                  elem.phase,
+                'frequency':              elem.frequency,
+                'window_thickness':       elem.window_thickness,
+                'window_material':        elem.window_material,
+                'window_radius':          elem.window_radius,
+                'cavity_material':        elem.cavity_material,
+                'cavity_vacuum_material': elem.cavity_vacuum_material,
+                'cavity_radius':          elem.cavity_radius,
+                'cavity_thickness':       elem.cavity_thickness,
+                'fixed':                  elem.fixed,
+            })
+        return pd.DataFrame(rows)
+
+    def build_absorber_dataframe(self, global_z_offset: float = 0.0) -> pd.DataFrame:
+        """Return a DataFrame with one row per Absorber."""
+        rows = []
+        for elem in self.elements:
+            if not isinstance(elem, Absorber):
+                continue
+            rows.append({
+                'name':                 elem.name,
+                'z_local':              elem.z_center,
+                'z_global':             elem.z_center + global_z_offset,
+                'absorber_type':        elem.absorber_type,
+                'material':             elem.material,
+                'cylinder_length':      elem.cylinder_length,
+                'cylinder_radius':      elem.cylinder_radius,
+                'wedge_opening_angle':  elem.wedge_opening_angle,
+                'wedge_height':         elem.wedge_height,
+                'wedge_rotation_angle': elem.wedge_rotation_angle,
+                'wedge_offset_x':       elem.wedge_offset_x,
+                'wedge_offset_y':       elem.wedge_offset_y,
+                'wedge_apex_to_base':   elem.wedge_apex_to_base,
+                'fixed':                elem.fixed,
+            })
+        return pd.DataFrame(rows)
+
+    def build_dipole_dataframe(self, global_z_offset: float = 0.0) -> pd.DataFrame:
+        """Return a DataFrame with one row per Dipole."""
+        rows = []
+        for elem in self.elements:
+            if not isinstance(elem, Dipole):
+                continue
+            rows.append({
+                'name':             elem.name,
+                'z_local':          elem.z_center,
+                'z_global':         elem.z_center + global_z_offset,
+                'field_strength':   elem.field_strength,
+                'aperture':         elem.aperture,
+                'length_z':         elem.length_z,
+                'enge_coefficient': elem.enge_coefficient,
+                'fixed':            elem.fixed,
+            })
+        return pd.DataFrame(rows)
+
+    def build_elements_dataframe(self, global_z_offset: float = 0.0) -> pd.DataFrame:
+        """Return a DataFrame with one row per element of any type."""
+        rows = []
+        for elem in self.elements:
+            rows.append({
+                'name':     elem.name,
+                'type':     type(elem).__name__,
+                'z_local':  elem.z_center,
+                'z_global': elem.z_center + global_z_offset,
+            })
+        return pd.DataFrame(rows)
+
 
 class MuonCoolingChannel(Beamline):
     def __init__(
@@ -162,12 +209,14 @@ class MuonCoolingChannel(Beamline):
         electric_field_model: str = "rfpillbox",
         reference_momentum: float = 200.0,
         on_axis_tolerance: float = 2e-2,
+        polarities: Optional[List[int]] = None,
     ):
         super().__init__(name)
         self.n_cells = n_cells
         self.cell_length = cell_length
         self.total_length = total_length
         self.total_width = total_width
+        self.polarities = polarities if polarities is not None else [1, -1, -1, 1]
 
         # Rendering / BDSIM field settings
         self.magnetic_field_model = magnetic_field_model
@@ -177,6 +226,60 @@ class MuonCoolingChannel(Beamline):
         self.electric_field_model = electric_field_model
         self.reference_momentum = reference_momentum
         self.on_axis_tolerance = on_axis_tolerance
+
+    def compute_rf_time_offsets(self, momentum_MeV_c: float, beam_start: float,
+                                mass_MeV_c: float = 105.66) -> Dict[str, float]:
+        """Compute and set time_offset on every RFCavity from transit time.
+
+        t_i = (z_i_global - beam_start) / (beta * c)
+
+        Parameters
+        ----------
+        momentum_MeV_c : float - Reference particle momentum [MeV/c]
+        beam_start     : float - Global z position where the beam enters [m]
+        mass_MeV_c     : float - Particle rest mass [MeV/c²] (default: muon)
+
+        Returns
+        -------
+        dict mapping cavity name -> time_offset [ns]
+        """
+        C_M_PER_NS = 0.299792458  # speed of light [m/ns]
+
+        E    = math.sqrt(momentum_MeV_c**2 + mass_MeV_c**2)
+        beta = momentum_MeV_c / E
+
+        global_offset = self.total_length / 2
+
+        offsets = {}
+        for elem in self.elements:
+            if isinstance(elem, RFCavity):
+                elem.time_offset = (elem.get_z(global_offset) - beam_start) / (beta * C_M_PER_NS)
+                offsets[elem.name] = elem.time_offset
+
+        return offsets
+
+    def getCellStarts(self) -> List[List]:
+        """Return the global z position and polarity sign at the start of each cell.
+
+        Cell starts are evenly spaced across the full channel length, matching
+        absorber placement positions, offset to global coordinates via total_length/2.
+        The polarity sign ('+' or '-') is derived from self.polarities using the same
+        stride logic as build_absorber_beamline, independent of whether absorbers or
+        dipoles are actually present.
+
+        Returns
+        -------
+        list of [z_global, sign] where sign is '+' or '-'
+        """
+        z_start = -self.n_cells * self.cell_length / 2
+        global_offset = self.total_length / 2
+        stride = max(1, len(self.polarities) // self.n_cells)
+        result = []
+        for cell_idx in range(self.n_cells):
+            z = round(z_start + cell_idx * self.cell_length + global_offset, 2)
+            pol = self.polarities[(cell_idx * stride) % len(self.polarities)]
+            result.append([z, '+' if pol > 0 else '-'])
+        return result
 
     def __repr__(self):
         return (f"MuonCoolingChannel(name='{self.name}', n_cells={self.n_cells}, "

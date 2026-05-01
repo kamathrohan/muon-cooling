@@ -158,16 +158,14 @@ def build_dipole_beamline(n_cells=None, cell_length=None, coil_cell_z=None, dipo
     elif cell_length is None or n_cells is None:
         raise ValueError("Must provide n_cells and cell_length if channel is None")
 
-    if polarities is None:
-        polarities = [1, -1, -1, 1]
-
     if channel is None:
-        channel = MuonCoolingChannel(n_cells=n_cells, cell_length=cell_length, total_width=1.0, name=name)
+        channel = MuonCoolingChannel(n_cells=n_cells, cell_length=cell_length, total_width=1.0, name=name,
+                                     polarities=polarities)
 
     positions = coil_placement_z(n_cells, cell_length, coil_cell_z)
 
     for i, z in enumerate(positions):
-        pol = polarities[i % len(polarities)]
+        pol = channel.polarities[i % len(channel.polarities)]
         dipole = Dipole(
             z_center=z,
             field_strength=dipole_template['field_strength'] * pol,
@@ -183,16 +181,18 @@ def build_dipole_beamline(n_cells=None, cell_length=None, coil_cell_z=None, dipo
 
 
 def build_absorber_beamline(n_cells=None, cell_length=None, absorber_template=None,
-                            rotation_angles=None, fixed=True,
-                            name="AbsorberChannel", channel: MuonCoolingChannel = None):
+                            fixed=True, name="AbsorberChannel", channel: MuonCoolingChannel = None):
     """Place one absorber per cell in a MuonCoolingChannel.
+
+    Wedge rotation is derived from channel.polarities: positive polarity → math.pi (absdown),
+    negative → 0.0 (absup). Polarities are sampled with a stride of
+    len(polarities) // n_cells so that one absorber covers each polarity pair.
 
     Parameters
     ----------
     n_cells           : int         - Number of cells
     cell_length       : float       - Cell length [m]
     absorber_template : dict        - Template for absorber properties
-    rotation_angles   : list[float] - Wedge rotation angles cycled per cell
     fixed             : bool        - Whether absorbers are fixed
     name              : str         - Beamline name (if channel is None)
     channel           : MuonCoolingChannel - Existing channel to add elements to
@@ -207,17 +207,16 @@ def build_absorber_beamline(n_cells=None, cell_length=None, absorber_template=No
     elif cell_length is None or n_cells is None:
         raise ValueError("Must provide n_cells and cell_length if channel is None")
 
-    if rotation_angles is None:
-        rotation_angles = [math.pi, 0.0]
-
     if channel is None:
         channel = MuonCoolingChannel(n_cells=n_cells, cell_length=cell_length, total_width=1.0, name=name)
 
+    stride  = max(1, len(channel.polarities) // n_cells)
     z_start = -n_cells * cell_length / 2
 
     for cell_idx in range(n_cells):
         cell_z = z_start + cell_idx * cell_length
-        angle  = rotation_angles[cell_idx % len(rotation_angles)]
+        pol    = channel.polarities[(cell_idx * stride) % len(channel.polarities)]
+        angle  = math.pi if pol > 0 else 0.0
 
         channel.add_element(Absorber(
             z_center=cell_z,
