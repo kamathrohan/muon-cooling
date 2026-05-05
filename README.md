@@ -20,6 +20,7 @@ Python toolkit for designing and rendering muon ionization cooling channels as B
 8. [Template System](#template-system)
 9. [Beam File Translation](#beam-file-translation)
 10. [Quickstart](#quickstart)
+11. [JSON-Driven Pipeline](#json-driven-pipeline)
 
 ---
 
@@ -596,3 +597,92 @@ from src import g4bl_to_beamgen
 n = g4bl_to_beamgen("beam.tmp", "beam_bdsim.dat", z_override=0.0)
 print(f"Wrote {n} particles to beam_bdsim.dat")
 ```
+
+---
+
+## JSON-Driven Pipeline
+
+`src/pipeline.py` and `src/run.py` provide a config-driven alternative to scripting the workflow by hand. Everything is described in a single JSON file (`templates/channel.json`); set any optional section to `null` to skip it.
+
+### Config structure
+
+```json
+{
+  "channel": {
+    "n_cells": 151, "cell_length": 1.0, "total_length": 170.0,
+    "total_width": 0.8, "reference_momentum": 200.0, "on_axis_tolerance": 2e-5
+  },
+  "coils": [
+    {
+      "name": "Coil2", "z_position": 0.081, "polarity": 1, "fixed": true,
+      "r_in": 0.185, "r_thick": 0.060, "N_pancakes": 5,
+      "L_pancake": 0.012, "L_spacing": 0.003, "currDensity": 300.0, "N_sheets": 5
+    },
+    {
+      "name": "Coil1", "z_position": 0.211, "polarity": 1, "fixed": true,
+      "r_in": 0.285, "r_thick": 0.070, "N_pancakes": 17,
+      "L_pancake": 0.012, "L_spacing": 0.004, "currDensity": 328.43, "N_sheets": 5
+    }
+  ],
+  "dipole": {
+    "coil_cell_z": 0.025, "name": "Dipole", "field_strength": 0.2,
+    "aperture": 0.2, "length_z": 0.1, "enge_coefficient": 5.5
+  },
+  "absorber": null,
+  "rf": null,
+  "output": {
+    "template_path": "templates/channel.tpl", "gmad_path": "output/channel.gmad",
+    "output_name": "channel", "n_events": 100
+  },
+  "samplers": {
+    "n_samplers": 120, "sampler_start_m": -3, "sampler_end_m": 3,
+    "n_particles_per_sampler": 3
+  },
+  "beam": { "mode": "beam", "distr_file": "beam_bdsim.dat" },
+  "analysis": { "output_csv": "output/sampler_data.csv" }
+}
+```
+
+**`coils`** is an array — add as many coil dicts as needed. Coils are grouped by their `fixed` value and `build_coil_beamline` is called once per group, so coils with the same `fixed` value should be contiguous in the array.
+
+**`dipole`/`absorber`/`rf`** — set to `null` to skip that builder entirely.
+
+**`rf`** must also include `n_rf_cells` and `rf_spacing` alongside the standard RF template keys.
+
+### pipeline.py — build only
+
+Builds the channel and writes the `.gmad` file. Can be imported or run from the CLI.
+
+```python
+from src.pipeline import build_channel_from_config
+import json
+
+with open("templates/channel.json") as f:
+    config = json.load(f)
+
+build_channel_from_config(config)
+```
+
+```bash
+python -m src.pipeline --config templates/channel.json
+```
+
+### run.py — build, simulate, and analyse
+
+Calls `build_channel_from_config`, runs BDSIM via `pybdsim.Run.Bdsim`, then extracts sampler data to CSV. Sampler count and particles per sampler are taken from the config.
+
+```python
+from src.run import run_from_config
+import json
+
+with open("templates/channel.json") as f:
+    config = json.load(f)
+
+run_from_config(config)
+```
+
+```bash
+python -m src.run --config templates/channel.json
+```
+
+The root file is expected at `{output_name}.root` (i.e. the value of `output.output_name` with `.root` appended). The CSV is written to `analysis.output_csv`.

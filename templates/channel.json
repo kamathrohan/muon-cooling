@@ -1,0 +1,67 @@
+{
+  "channel": {
+    "n_cells": 151,
+    "cell_length": 1.0,
+    "total_length": 170.0,
+    "total_width": 0.8,
+    "reference_momentum": 200.0,
+    "on_axis_tolerance": 2e-5
+  },
+  "coils": [
+    {
+      "name": "Coil2",
+      "z_position": 0.081,
+      "polarity": 1,
+      "fixed": true,
+      "r_in": 0.185,
+      "r_thick": 0.060,
+      "N_pancakes": 5,
+      "L_pancake": 0.012,
+      "L_spacing": 0.003,
+      "currDensity": 300.0,
+      "N_sheets": 5
+    },
+    {
+      "name": "Coil1",
+      "z_position": 0.211,
+      "polarity": 1,
+      "fixed": true,
+      "r_in": 0.285,
+      "r_thick": 0.070,
+      "N_pancakes": 17,
+      "L_pancake": 0.012,
+      "L_spacing": 0.004,
+      "currDensity": 328.43,
+      "N_sheets": 5
+    }
+  ],
+  "dipole": {
+    "coil_cell_z": 0.025,
+    "name": "Dipole",
+    "field_strength": 0.2,
+    "aperture": 0.2,
+    "length_z": 0.1,
+    "enge_coefficient": 5.5
+  },
+  "absorber": null,
+  "rf": null,
+  "output": {
+    "template_path": "templates/channel.tpl",
+    "gmad_path": "output/channel.gmad",
+    "output_name": "channel",
+    "n_events": 100
+  },
+  "samplers": {
+    "n_samplers": 120,
+    "sampler_start_m": -3,
+    "sampler_end_m": 3,
+    "n_particles_per_sampler": 3
+  },
+  "beam": {
+    "mode": "beam",
+    "distr_file": "beam_bdsim.dat"
+  },
+  "analysis": {
+    "output_csv": "output/sampler_data.csv"
+  }
+}

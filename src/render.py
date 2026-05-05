@@ -120,6 +120,16 @@ def render_gmad(beamline: MuonCoolingChannel,
     tpl_path : str          - path to templates/channel.tpl
     out_gmad : str          - output gmad path
     """
+    half_length = beamline.total_length / 2
+    global_offset = half_length
+    for elem in beamline.elements:
+        z_global = elem.z_center + global_offset
+        if not (-half_length <= z_global <= half_length):
+            raise ValueError(
+                f"Element '{elem.name}' at local z={elem.z_center}m (global z={z_global}m) "
+                f"exceeds channel bounds ±{half_length}m (total_length={beamline.total_length}m)"
+            )
+
     beamline.compute_rf_time_offsets(beamline.reference_momentum, MUON_MASS_MEV_C2)
 
     pancake_df = beamline.build_pancake_dataframe()
@@ -145,9 +155,10 @@ def render_gmad(beamline: MuonCoolingChannel,
             return '{' + formatted[0] + '}'
         return '{' + ', '.join(formatted) + '}'
 
-    def fmt_str_array(values):
+    def fmt_str_array(values, injection=None):
         if len(values) == 0:
-            return '{"G4_U"}'
+            default = injection if injection is not None else "G4_U"
+            return '{' + f'"{default}"' + '}'
         if len(set(values)) == 1:
             return '{"' + values[0] + '"}'
         return '{' + ', '.join(f'"{v}"' for v in values) + '}'
@@ -158,7 +169,7 @@ def render_gmad(beamline: MuonCoolingChannel,
         'total_length':      beamline.total_length,
         'total_width':       beamline.total_width,
         'on_axis_tolerance': beamline.on_axis_tolerance,
-        'coil_material':     fmt_str_array(list(df['material'])),
+        'coil_material':     fmt_str_array(list(df['material']), injection="G4_Cu"),
 
         # channel field models
         'magnetic_field_model':  beamline.magnetic_field_model,
@@ -190,8 +201,8 @@ def render_gmad(beamline: MuonCoolingChannel,
 
         # absorbers
         'n_absorbers':                len(absorbers),
-        'absorber_type':              fmt_str_array([a.absorber_type       for a in absorbers]),
-        'absorber_material':          fmt_str_array([a.material            for a in absorbers]),
+        'absorber_type':              fmt_str_array([a.absorber_type       for a in absorbers], injection="wedge"),
+        'absorber_material':          fmt_str_array([a.material            for a in absorbers], injection="G4_Cu"),
         'absorber_offset_z':          fmt_array([a.z_center               for a in absorbers], '.9g'),
         'absorber_cylinder_length':   fmt_mm_array([a.cylinder_length      for a in absorbers]),
         'absorber_cylinder_radius':   fmt_mm_array([a.cylinder_radius      for a in absorbers]),
@@ -211,10 +222,10 @@ def render_gmad(beamline: MuonCoolingChannel,
         'rf_phase':               fmt_array([r.phase              for r in rf_cavs]),
         'rf_frequency':           fmt_array([r.frequency          for r in rf_cavs]),
         'rf_window_thickness':    fmt_mm_array([r.window_thickness for r in rf_cavs]),
-        'rf_window_material':     fmt_str_array([r.window_material for r in rf_cavs]),
+        'rf_window_material':     fmt_str_array([r.window_material for r in rf_cavs], injection="G4_Cu"),
         'rf_window_radius':       fmt_mm_array([r.window_radius   for r in rf_cavs]),
-        'rf_cavity_material':     fmt_str_array([r.cavity_material for r in rf_cavs]),
-        'rf_cavity_vacuum_material': fmt_str_array([r.cavity_vacuum_material for r in rf_cavs]),
+        'rf_cavity_material':     fmt_str_array([r.cavity_material for r in rf_cavs], injection="G4_Cu"),
+        'rf_cavity_vacuum_material': fmt_str_array([r.cavity_vacuum_material for r in rf_cavs], injection="G4_Cu"),
         'rf_cavity_radius':       fmt_mm_array([r.cavity_radius   for r in rf_cavs]),
         'rf_cavity_thickness':    fmt_mm_array([r.cavity_thickness for r in rf_cavs]),
     }
