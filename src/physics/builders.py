@@ -154,7 +154,8 @@ def build_dipole_beamline(n_cells=None, cell_length=None, coil_cell_z=None, dipo
         cell_length = channel.cell_length
         if n_cells is not None and n_cells > channel.n_cells:
             raise ValueError(f"n_cells {n_cells} != channel.n_cells {channel.n_cells}")
-        n_cells = channel.n_cells
+        if n_cells is None: 
+            n_cells = channel.n_cells
     elif cell_length is None or n_cells is None:
         raise ValueError("Must provide n_cells and cell_length if channel is None")
 
@@ -179,23 +180,29 @@ def build_dipole_beamline(n_cells=None, cell_length=None, coil_cell_z=None, dipo
 
     return channel
 
-
 def build_absorber_beamline(n_cells=None, cell_length=None, absorber_template=None,
-                            fixed=True, name="AbsorberChannel", channel: MuonCoolingChannel = None):
+                            fixed=True, name="AbsorberChannel",
+                            wedge_alignment_angle1=math.pi, wedge_alignment_angle2=0.0,
+                            offsetX=0.0,
+                            channel: MuonCoolingChannel = None):
     """Place one absorber per cell in a MuonCoolingChannel.
 
-    Wedge rotation is derived from channel.polarities: positive polarity → math.pi (absdown),
-    negative → 0.0 (absup). Polarities are sampled with a stride of
-    len(polarities) // n_cells so that one absorber covers each polarity pair.
+    Wedge rotation strictly alternates by sub-cell parity to match G4bl:
+    even cell_idx → wedge_alignment_angle1, odd cell_idx → wedge_alignment_angle2.
+    (Recall: one G4bl cell = two Python half-length cells, so parity here
+    corresponds to G4bl's A/B sub-cell pair.)
 
     Parameters
     ----------
-    n_cells           : int         - Number of cells
-    cell_length       : float       - Cell length [m]
-    absorber_template : dict        - Template for absorber properties
-    fixed             : bool        - Whether absorbers are fixed
-    name              : str         - Beamline name (if channel is None)
-    channel           : MuonCoolingChannel - Existing channel to add elements to
+    n_cells                : int   - Number of (half-length) cells
+    cell_length            : float - Cell length [m]
+    absorber_template      : dict  - Template for absorber properties
+    fixed                  : bool  - Whether absorbers are fixed
+    name                   : str   - Beamline name (if channel is None)
+    wedge_alignment_angle1 : float - Rotation for even sub-cells [rad]
+    wedge_alignment_angle2 : float - Rotation for odd sub-cells [rad]
+    offsetX                : float - Wedge x-offset magnitude; sign alternates per cell [m]
+    channel                : MuonCoolingChannel - Existing channel to add elements to
     """
     if channel is not None:
         if cell_length is not None and not np.isclose(cell_length, channel.cell_length):
@@ -203,31 +210,33 @@ def build_absorber_beamline(n_cells=None, cell_length=None, absorber_template=No
         cell_length = channel.cell_length
         if n_cells is not None and n_cells > channel.n_cells:
             raise ValueError(f"n_cells {n_cells} != channel.n_cells {channel.n_cells}")
-        n_cells = channel.n_cells
+        if n_cells is None:
+            n_cells = channel.n_cells
     elif cell_length is None or n_cells is None:
         raise ValueError("Must provide n_cells and cell_length if channel is None")
 
     if channel is None:
         channel = MuonCoolingChannel(n_cells=n_cells, cell_length=cell_length, total_width=1.0, name=name)
 
-    stride  = max(1, len(channel.polarities) // n_cells)
     z_start = -n_cells * cell_length / 2
 
     for cell_idx in range(n_cells):
         cell_z = z_start + cell_idx * cell_length
-        pol    = channel.polarities[(cell_idx * stride) % len(channel.polarities)]
-        angle  = math.pi if pol > 0 else 0.0
+        angle  = wedge_alignment_angle1 if cell_idx % 2 == 0 else wedge_alignment_angle2
+        cell_offsetX =  offsetX if cell_idx % 2 else -1 * offsetX
 
         channel.add_element(Absorber(
             z_center=cell_z,
             wedge_rotation_angle=angle,
+            wedge_offset_x=cell_offsetX,
             **{k: v for k, v in absorber_template.items()
-               if k not in ('wedge_rotation_angle', 'name')},
+               if k not in ('wedge_rotation_angle', 'wedge_offset_x', 'name')},
             fixed=fixed,
             name=f"{absorber_template.get('name', 'Absorber')}_{cell_idx}",
         ))
 
     return channel
+
 
 
 def build_rf_beamline(n_cells=None, cell_length=None, n_rf_cells=None, rf_spacing=None,
@@ -251,7 +260,8 @@ def build_rf_beamline(n_cells=None, cell_length=None, n_rf_cells=None, rf_spacin
         cell_length = channel.cell_length
         if n_cells is not None and n_cells > channel.n_cells:
             raise ValueError(f"n_cells {n_cells} != channel.n_cells {channel.n_cells}")
-        n_cells = channel.n_cells
+        if n_cells is None:
+            n_cells = channel.n_cells
     elif cell_length is None or n_cells is None:
         raise ValueError("Must provide n_cells and cell_length if channel is None")
 

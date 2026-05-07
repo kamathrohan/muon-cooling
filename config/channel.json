@@ -43,10 +43,28 @@
     "length_z": 0.1,
     "enge_coefficient": 5.5
   },
-  "absorber": null,
-  "rf": null,
+  "absorber": {
+    "name": "Absorber",
+    "absorber_type": "wedge",
+    "material": "G4_LITHIUM_HYDRIDE",
+    "wedge_opening_angle": 0.17453292519943295,
+    "wedge_height": 0.24,
+    "wedge_apex_to_base": 0.1134256
+  },
+  "rf": {
+    "n_rf_cells": 3,
+    "rf_spacing": 0.1946,
+    "name": "RF",
+    "length": 0.18856,
+    "voltage": 30.0,
+    "phase": -1.2217304764,
+    "frequency": 704000000.0,
+    "cavity_radius": 0.163,
+    "cavity_thickness": 0.003,
+    "cavity_material": "G4_Cu"
+  },
   "output": {
-    "template_path": "templates/channel.tpl",
+    "template_path": "config/channel.tpl",
     "gmad_path": "output/channel.gmad",
     "output_name": "channel",
     "n_events": 100
@@ -59,7 +77,7 @@
   },
   "beam": {
     "mode": "beam",
-    "distr_file": "beam_bdsim.dat"
+    "distr_file": "beam_bdsim2.dat"
   },
   "analysis": {
     "output_csv": "output/sampler_data.csv"
