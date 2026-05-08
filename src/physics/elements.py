@@ -209,7 +209,7 @@ class Absorber(BeamlineElement):
 
 
 class RFCavity(BeamlineElement):
-    def __init__(self, z_center: float, time_offset: float = 0.0,
+    def __init__(self, z_center: float, time_offset: float = None,
                  length: float = 0.18856, voltage: float = 30.0,
                  phase: float = -1.5707963267948966 + 0.3490658503988659,
                  frequency: float = 704e6,

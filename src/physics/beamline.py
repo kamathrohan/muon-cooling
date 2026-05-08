@@ -210,6 +210,10 @@ class MuonCoolingChannel(Beamline):
         reference_momentum: float = 200.0,
         on_axis_tolerance: float = 2e-2,
         polarities: Optional[List[int]] = None,
+        grid_points_per_mm: float = 0.1,
+        z_period_start: float = -70000,
+        z_period_end: float = 175000,
+        period_length: float = 2000,
     ):
         super().__init__(name)
         self.n_cells = n_cells
@@ -226,6 +230,10 @@ class MuonCoolingChannel(Beamline):
         self.electric_field_model = electric_field_model
         self.reference_momentum = reference_momentum
         self.on_axis_tolerance = on_axis_tolerance
+        self.grid_points_per_mm = grid_points_per_mm
+        self.z_period_start = z_period_start
+        self.z_period_end = z_period_end
+        self.period_length = period_length
 
     def compute_rf_time_offsets(self, momentum_MeV_c: float, beam_start: float,
                                 mass_MeV_c: float = 105.66) -> Dict[str, float]:
@@ -257,6 +265,27 @@ class MuonCoolingChannel(Beamline):
                 offsets[elem.name] = elem.time_offset
 
         return offsets
+
+    def set_rf_time_offsets(self, offsets) -> None:
+        """Manually set time_offset on every RFCavity from a provided array.
+
+        Parameters
+        ----------
+        offsets : array-like
+            Time offsets [ns] in beamline order, one per RFCavity.
+
+        Raises
+        ------
+        ValueError
+            If the length of offsets does not match the number of RFCavities.
+        """
+        rf_cavities = [elem for elem in self.elements if isinstance(elem, RFCavity)]
+        if len(offsets) != len(rf_cavities):
+            raise ValueError(
+                f"Expected {len(rf_cavities)} offsets (one per RFCavity), got {len(offsets)}."
+            )
+        for cavity, offset in zip(rf_cavities, offsets):
+            cavity.time_offset = offset
 
     def getCellStarts(self) -> List[List]:
         """Return the global z position and polarity sign at the start of each cell.

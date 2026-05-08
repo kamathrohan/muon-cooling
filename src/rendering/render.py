@@ -45,14 +45,19 @@ def render_gmad(beamline: MuonCoolingChannel,
                 f"exceeds channel bounds ±{half_length}m (total_length={beamline.total_length}m)"
             )
 
-    beamline.compute_rf_time_offsets(beamline.reference_momentum,beam_start=17.5)
+    rf_cavs = [e for e in beamline.elements if isinstance(e, RFCavity)]
+    unphased = [c.name for c in rf_cavs if c.time_offset is None]
+    if unphased:
+        raise ValueError(
+            f"RF cavities are not phased (time_offset is None): {unphased}. "
+            "Call compute_rf_time_offsets() or set_rf_time_offsets() before rendering."
+        )
 
     pancake_df = beamline.build_pancake_dataframe()
     df = pancake_df.sort_values(['coil_index', 'pancake_index']).reset_index(drop=True)
 
     dipoles   = [e for e in beamline.elements if isinstance(e, Dipole)]
     absorbers = [e for e in beamline.elements if isinstance(e, Absorber)]
-    rf_cavs   = [e for e in beamline.elements if isinstance(e, RFCavity)]
 
     n_coils = len(df)
     context = {
@@ -68,6 +73,10 @@ def render_gmad(beamline: MuonCoolingChannel,
         'dipole_field_model':    beamline.dipole_field_model,
         'interpolator':          beamline.interpolator,
         'electric_field_model':  beamline.electric_field_model,
+        'grid_points_per_mm':    beamline.grid_points_per_mm,
+        'z_period_start':        beamline.z_period_start,
+        'z_period_end':          beamline.z_period_end,
+        'period_length':         beamline.period_length,
 
         # coils
         'n_coils':               n_coils,
