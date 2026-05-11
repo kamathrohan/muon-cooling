@@ -13,6 +13,5 @@
   "max_runtime": 10000,
   "env_setup": "/path/to/env_setup.sh",
   "bdsim_setup": "/path/to/bdsim_setup.sh",
-  "infile": "channel.gmad",
   "ngenerate": 100
 }

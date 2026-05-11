@@ -65,7 +65,6 @@ def initialiseJob(
     max_runtime: int,
     env_setup: str,
     bdsim_setup: str,
-    infile: str,
     ngenerate: int,
 ) -> List[str]:
     """
@@ -87,7 +86,6 @@ def initialiseJob(
         max_runtime (int): Maximum job runtime in seconds (+MaxRuntime).
         env_setup (str): Path to the environment setup script.
         bdsim_setup (str): Path to the BDSIM setup script.
-        infile (str): Input file name exported for bdsim.
         ngenerate (int): Number of events exported for bdsim.
 
     Returns:
@@ -126,7 +124,6 @@ def initialiseJob(
         replica_folders=replica_folders,
         outfiles=replica_stems,
         jobcard=jobcard,
-        infile=infile,
         ngenerate=ngenerate,
         out_path=os.path.join(job_output_dir, "doDataGeneration.sh"),
         tpl_path=do_datagen_template,
@@ -162,7 +159,6 @@ def main():
         max_runtime=cfg["max_runtime"],
         env_setup=cfg["env_setup"],
         bdsim_setup=cfg["bdsim_setup"],
-        infile=cfg["infile"],
         ngenerate=cfg["ngenerate"],
     )
     print(f"Job '{args.job_id}' ready with {len(replica_folders)} replicas:")

@@ -92,7 +92,6 @@ def renderDoDataGeneration(
     replica_folders: List[str],
     outfiles: List[str],
     jobcard: str,
-    infile: str,
     ngenerate: int,
     out_path: str,
     tpl_path: str = "config/doDataGeneration.sh.tpl",
@@ -104,7 +103,6 @@ def renderDoDataGeneration(
         replica_folders (List[str]): Paths to each replica simulation folder.
         outfiles (List[str]): Output file stems, one per replica.
         jobcard (str): Path to the rendered submitArgs.job file.
-        infile (str): Input file name passed to bdsim via environment.
         ngenerate (int): Number of events to generate, passed via environment.
         out_path (str): Destination path for the rendered script.
         tpl_path (str): Path to the Jinja2 template file.
@@ -115,7 +113,6 @@ def renderDoDataGeneration(
     script = env.get_template(tpl_file).render(
         replicas=list(zip(replica_folders, outfiles)),
         jobcard=jobcard,
-        infile=infile,
         ngenerate=ngenerate,
     )
     with open(out_path, "w") as f:
