@@ -90,6 +90,7 @@ def renderSubmitArgs(
 
 def renderDoDataGeneration(
     replica_folders: List[str],
+    outfiles: List[str],
     jobcard: str,
     infile: str,
     ngenerate: int,
@@ -101,6 +102,7 @@ def renderDoDataGeneration(
 
     Parameters:
         replica_folders (List[str]): Paths to each replica simulation folder.
+        outfiles (List[str]): Output file stems, one per replica.
         jobcard (str): Path to the rendered submitArgs.job file.
         infile (str): Input file name passed to bdsim via environment.
         ngenerate (int): Number of events to generate, passed via environment.
@@ -111,7 +113,7 @@ def renderDoDataGeneration(
     tpl_file = os.path.basename(tpl_path)
     env = Environment(loader=FileSystemLoader(tpl_dir), keep_trailing_newline=True)
     script = env.get_template(tpl_file).render(
-        replica_folders=replica_folders,
+        replicas=list(zip(replica_folders, outfiles)),
         jobcard=jobcard,
         infile=infile,
         ngenerate=ngenerate,
