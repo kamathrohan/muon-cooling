@@ -2,7 +2,7 @@
   "simDir": "output/SimTest",
   "outputDir": "output/OutputTest",
   "iterNum": 0,
-  "batchNum": 0,
+  "nBatch": 3,
   "nReplicas": 3,
   "channel_json": "config/channel.json",
   "beam_file": "output/beam_bdsim4.dat",

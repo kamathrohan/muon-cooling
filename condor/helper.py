@@ -24,11 +24,8 @@ def makeFolders(simPath, jobID, iterNum, batchNum, nReplicas):
     iterFolder = os.path.join(simFolder, str(iterNum))
     os.makedirs(iterFolder, exist_ok=True)
 
-    if batchNum == 0:
-        parent = iterFolder
-    else:
-        parent = os.path.join(iterFolder, str(batchNum))
-        os.makedirs(parent, exist_ok=True)
+    parent = os.path.join(iterFolder, str(batchNum))
+    os.makedirs(parent, exist_ok=True)
 
     replicaFolders = []
     for r in range(nReplicas):

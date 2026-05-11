@@ -5,6 +5,8 @@ import shutil
 import sys
 from typing import List
 
+import numpy as np
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.pipeline import build_channel_from_config
@@ -12,7 +14,8 @@ from condor.helper import makeFolders, renderDataGeneration, renderSubmitArgs, r
 
 
 def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: str,
-                     gmad_name: str = None, distr_file_override: str = None) -> str:
+                     gmad_name: str = None, distr_file_override: str = None,
+                     extra_config: dict = None) -> str:
     """
     Create simDir, render a .gmad file into it, and copy the beam distribution file.
 
@@ -24,6 +27,8 @@ def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: s
         gmad_name (str): Override for the output .gmad filename (without directory).
         distr_file_override (str): If provided, use this path in the gmad distrFile instead
             of the one in the config, and skip copying the beam file into simDir.
+        extra_config (dict): Key/value pairs merged into the loaded config before rendering.
+            Nested dicts are merged shallowly (one level deep).
 
     Returns:
         str: Path to the rendered .gmad file.
@@ -32,6 +37,13 @@ def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: s
 
     with open(channel_json) as f:
         config = json.load(f)
+
+    if extra_config:
+        for k, v in extra_config.items():
+            if isinstance(v, dict) and isinstance(config.get(k), dict):
+                config[k].update(v)
+            else:
+                config[k] = v
 
     expected_beam = config["beam"]["distr_file"]
     if os.path.basename(beam_file) != os.path.basename(expected_beam):
@@ -60,7 +72,7 @@ def initialiseJob(
     outputDir: str,
     jobId: str,
     iterNum,
-    batchNum,
+    nBatch: int,
     nReplicas: int,
     channel_json: str,
     beam_file: str,
@@ -74,15 +86,15 @@ def initialiseJob(
     ngenerate: int,
 ) -> List[str]:
     """
-    Set up all replica simulation folders and render the dataGeneration script.
+    Set up all batch/replica simulation folders and render the dataGeneration script.
 
     Parameters:
         simDir (str): Base simulation directory; job folder created inside it.
         outputDir (str): Base output directory; job folder created inside it.
         jobId (str): Job identifier used as the top-level folder name.
         iterNum: Iteration number.
-        batchNum: Batch number.
-        nReplicas (int): Number of replica folders to create.
+        nBatch (int): Number of independent perturbation draws (batches).
+        nReplicas (int): Number of replica folders per batch (share the same draw).
         channel_json (str): Path to the channel JSON config file.
         beam_file (str): Path to the beam distribution file.
         channel_template (str): Path to the Jinja2 channel .tpl template.
@@ -95,23 +107,35 @@ def initialiseJob(
         ngenerate (int): Number of events exported for bdsim.
 
     Returns:
-        List[str]: Paths to each replica folder.
+        List[str]: Paths to all replica folders across all batches.
     """
-    job_sim_dir = os.path.join(simDir, jobId)
-    replica_folders = makeFolders(job_sim_dir, jobId, iterNum, batchNum, nReplicas)
+    beam_basename = os.path.basename(beam_file)
+    beam_rel = "../" + beam_basename
 
-    replica_stems = [
-        f"channel_{jobId}_{iterNum}n_{batchNum}b_{r}r"
-        for r in range(nReplicas)
-    ]
+    rng = np.random.default_rng()
+    all_folders = []
+    all_stems = []
 
-    beam_parent = os.path.dirname(replica_folders[0])
-    shutil.copy2(beam_file, beam_parent)
-    beam_rel = "../" + os.path.basename(beam_file)
+    for b in range(nBatch):
+        batch_folders = makeFolders(simDir, jobId, iterNum, b, nReplicas)
+        batch_stems = [
+            f"channel_{jobId}_{iterNum}n_{b}b_{r}r"
+            for r in range(nReplicas)
+        ]
 
-    for folder, stem in zip(replica_folders, replica_stems):
-        setup_simulation(folder, channel_json, channel_template, beam_file,
-                         gmad_name=stem + ".gmad", distr_file_override=beam_rel)
+        beam_parent = os.path.dirname(batch_folders[0])
+        shutil.copy2(beam_file, beam_parent)
+
+        tol_seed = int(rng.integers(0, 2**31))
+        extra = {"toleranceCoil": {"seed": tol_seed}}
+
+        for folder, stem in zip(batch_folders, batch_stems):
+            setup_simulation(folder, channel_json, channel_template, beam_file,
+                             gmad_name=stem + ".gmad", distr_file_override=beam_rel,
+                             extra_config=extra)
+
+        all_folders.extend(batch_folders)
+        all_stems.extend(batch_stems)
 
     job_output_dir = os.path.join(outputDir, jobId)
     os.makedirs(job_output_dir, exist_ok=True)
@@ -132,15 +156,15 @@ def initialiseJob(
     )
 
     renderDoDataGeneration(
-        replica_folders=replica_folders,
-        outfiles=replica_stems,
+        replica_folders=all_folders,
+        outfiles=all_stems,
         jobcard=jobcard,
         ngenerate=ngenerate,
         out_path=os.path.join(job_output_dir, "doDataGeneration.sh"),
         tpl_path=do_datagen_template,
     )
 
-    return replica_folders
+    return all_folders
 
 
 def main():
@@ -159,7 +183,7 @@ def main():
         outputDir=cfg["outputDir"],
         jobId=args.job_id,
         iterNum=cfg["iterNum"],
-        batchNum=cfg["batchNum"],
+        nBatch=cfg["nBatch"],
         nReplicas=cfg["nReplicas"],
         channel_json=cfg["channel_json"],
         beam_file=cfg["beam_file"],

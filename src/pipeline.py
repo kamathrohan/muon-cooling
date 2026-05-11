@@ -107,17 +107,21 @@ def build_channel_from_config(config: dict, tpl_path: str, out_gmad: str) -> Non
     tol_cfg = config.get("toleranceCoil")
     if tol_cfg:
         from .physics.elements import SolenoidCoil as _SC
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(tol_cfg.get("seed"))
+
+        def _draw(sigma):
+            return np.clip(rng.normal(0, sigma), -3 * sigma, 3 * sigma)
+
         for coil in (e for e in channel.elements if isinstance(e, _SC)):
             if tol_cfg.get("current", 0):
-                r = rng.normal(0, tol_cfg["current"])
+                r = _draw(tol_cfg["current"])
                 coil.currDensity *= (1 + r)
                 coil._Itot_per_pancake *= (1 + r)
             if tol_cfg.get("tilt", 0):
-                coil.tilt_x += rng.normal(0, tol_cfg["tilt"])
-                coil.tilt_y += rng.normal(0, tol_cfg["tilt"])
+                coil.tilt_x += _draw(tol_cfg["tilt"])
+                coil.tilt_y += _draw(tol_cfg["tilt"])
             if tol_cfg.get("offset", 0):
-                coil.z_center *= (1 + rng.normal(0, tol_cfg["offset"]))
+                coil.z_center *= (1 + _draw(tol_cfg["offset"]))
 
     samp_cfg = config["samplers"]
     beam_cfg = config["beam"]
