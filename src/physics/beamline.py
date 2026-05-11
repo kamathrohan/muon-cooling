@@ -107,9 +107,9 @@ class Beamline:
                     'material':      elem.material,
                     'coil_offset_x': 0.0,
                     'coil_offset_y': 0.0,
-                    'coil_tilt_x':   0.0,
-                    'coil_tilt_y':   0.0,
-                    'coil_tilt_z':   0.0,
+                    'coil_tilt_x':   elem.tilt_x,
+                    'coil_tilt_y':   elem.tilt_y,
+                    'coil_tilt_z':   elem.tilt_z,
                 })
         return pd.DataFrame(rows)
 
@@ -286,6 +286,36 @@ class MuonCoolingChannel(Beamline):
             )
         for cavity, offset in zip(rf_cavities, offsets):
             cavity.time_offset = offset
+
+    def set_tilts(self, tilts: dict) -> None:
+        """Manually set tilt_x, tilt_y, tilt_z on every SolenoidCoil from arrays.
+
+        Parameters
+        ----------
+        tilts : dict with keys 'tiltX', 'tiltY', 'tiltZ'
+            Each value is an array-like of length equal to the number of SolenoidCoils.
+
+        Raises
+        ------
+        ValueError
+            If any key is missing or any array length does not match the number of SolenoidCoils.
+        """
+        for key in ("tiltX", "tiltY", "tiltZ"):
+            if key not in tilts:
+                raise ValueError(f"Missing required key '{key}' in tilts dict.")
+
+        coils = [elem for elem in self.elements if isinstance(elem, SolenoidCoil)]
+        for key in ("tiltX", "tiltY", "tiltZ"):
+            if len(tilts[key]) != len(coils):
+                raise ValueError(
+                    f"Expected {len(coils)} values for '{key}' (one per SolenoidCoil), "
+                    f"got {len(tilts[key])}."
+                )
+
+        for coil, tx, ty, tz in zip(coils, tilts["tiltX"], tilts["tiltY"], tilts["tiltZ"]):
+            coil.tilt_x = tx
+            coil.tilt_y = ty
+            coil.tilt_z = tz
 
     def getCellStarts(self) -> List[List]:
         """Return the global z position and polarity sign at the start of each cell.

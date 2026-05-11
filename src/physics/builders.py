@@ -223,7 +223,7 @@ def build_absorber_beamline(n_cells=None, cell_length=None, absorber_template=No
     for cell_idx in range(n_cells):
         cell_z = z_start + cell_idx * cell_length
         angle  = wedge_alignment_angle1 if cell_idx % 2 == 0 else wedge_alignment_angle2
-        cell_offsetX =  offsetX if cell_idx % 2 else -1 * offsetX
+        cell_offsetX = 0 if offsetX == 0 else (offsetX if cell_idx % 2 else -offsetX)
 
         channel.add_element(Absorber(
             z_center=cell_z,

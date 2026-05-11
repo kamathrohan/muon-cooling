@@ -1,0 +1,18 @@
+{
+  "simDir": "output/SimTest",
+  "outputDir": "output/OutputTest",
+  "iterNum": 0,
+  "batchNum": 0,
+  "nReplicas": 3,
+  "channel_json": "config/channel.json",
+  "beam_file": "output/beam_bdsim4.dat",
+  "channel_template": "config/channel.tpl",
+  "datagen_template": "config/dataGeneration.sh.tpl",
+  "submit_template": "config/submitArgs.job.tpl",
+  "do_datagen_template": "config/doDataGeneration.sh.tpl",
+  "max_runtime": 10000,
+  "env_setup": "/path/to/env_setup.sh",
+  "bdsim_setup": "/path/to/bdsim_setup.sh",
+  "infile": "channel.gmad",
+  "ngenerate": 100
+}

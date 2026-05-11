@@ -14,8 +14,13 @@ from . import (
 _COIL_TEMPLATE_KEYS = {"name", "r_in", "r_thick", "N_pancakes", "L_pancake",
                        "L_spacing", "currDensity", "N_sheets", "material"}
 
+_ABSORBER_BUILDER_KEYS = {"n_cells", "wedge_alignment_angle1", "wedge_alignment_angle2",
+                          "wedge_offset_x"}
 
-def build_channel_from_config(config: dict) -> None:
+_RF_BUILDER_KEYS = {"n_cells", "n_rf_cells", "rf_spacing"}
+
+
+def build_channel_from_config(config: dict, tpl_path: str, out_gmad: str) -> None:
     ch_cfg = config["channel"]
     channel = MuonCoolingChannel(
         n_cells=ch_cfg["n_cells"],
@@ -24,6 +29,12 @@ def build_channel_from_config(config: dict) -> None:
         total_width=ch_cfg["total_width"],
         reference_momentum=ch_cfg["reference_momentum"],
         on_axis_tolerance=ch_cfg.get("on_axis_tolerance", 2e-5),
+        magnetic_field_model=ch_cfg.get("magnetic_field_model", "solenoidsheet"),
+        magnetic_field_method=ch_cfg.get("magnetic_field_method", "grid"),
+        grid_points_per_mm=ch_cfg.get("grid_points_per_mm", 0.1),
+        z_period_start=ch_cfg.get("z_period_start", -70000),
+        z_period_end=ch_cfg.get("z_period_end", 175000),
+        period_length=ch_cfg.get("period_length", 2000),
     )
 
     for fixed_val, group in groupby(config.get("coils") or [], key=lambda c: c["fixed"]):
@@ -49,32 +60,57 @@ def build_channel_from_config(config: dict) -> None:
 
     absorber_cfg = config.get("absorber")
     if absorber_cfg:
+        absorber_template = {k: v for k, v in absorber_cfg.items() if k not in _ABSORBER_BUILDER_KEYS}
         channel = build_absorber_beamline(
-            absorber_template=absorber_cfg,
+            n_cells=absorber_cfg.get("n_cells"),
+            wedge_alignment_angle1=absorber_cfg.get("wedge_alignment_angle1", 3.141592653589793),
+            wedge_alignment_angle2=absorber_cfg.get("wedge_alignment_angle2", 0.0),
+            offsetX=absorber_cfg.get("wedge_offset_x", 0.0),
+            absorber_template=absorber_template,
             channel=channel,
         )
 
     rf_cfg = config.get("rf")
     if rf_cfg:
-        rf_template = {k: v for k, v in rf_cfg.items() if k not in {"n_rf_cells", "rf_spacing"}}
+        rf_template = {k: v for k, v in rf_cfg.items() if k not in _RF_BUILDER_KEYS}
         channel = build_rf_beamline(
+            n_cells=rf_cfg.get("n_cells"),
             n_rf_cells=rf_cfg["n_rf_cells"],
             rf_spacing=rf_cfg["rf_spacing"],
             rf_template=rf_template,
             channel=channel,
         )
 
-    out_cfg = config["output"]
+    rf_phases = config.get("rf_phases")
+    if rf_phases:
+        channel.set_rf_time_offsets(rf_phases)
+
+    coil_tilts = config.get("coilTilts")
+    if coil_tilts:
+        from .physics.elements import SolenoidCoil
+        n_coils = sum(1 for e in channel.elements if isinstance(e, SolenoidCoil))
+        expanded = {}
+        for key in ("tiltX", "tiltY", "tiltZ"):
+            val = coil_tilts[key]
+            if isinstance(val, list):
+                if len(val) != n_coils:
+                    raise ValueError(
+                        f"coilTilts.{key} has {len(val)} values but channel has {n_coils} coils."
+                    )
+                expanded[key] = val
+            else:
+                expanded[key] = [val] * n_coils
+        channel.set_tilts(expanded)
+
     samp_cfg = config["samplers"]
     beam_cfg = config["beam"]
 
     render_gmad(
         channel,
-        tpl_path=out_cfg["template_path"],
-        out_gmad=out_cfg["gmad_path"],
-        n_samplers=samp_cfg["n_samplers"],
-        sampler_start_m=samp_cfg["sampler_start_m"],
-        sampler_end_m=samp_cfg["sampler_end_m"],
+        tpl_path=tpl_path,
+        out_gmad=out_gmad,
+        sampler_mode=samp_cfg.get("sampler_mode", "linspace"),
+        sampler_kwargs=samp_cfg.get("sampler_kwargs"),
         beam_mode=beam_cfg["mode"],
         beam_kwargs={"distr_file": beam_cfg["distr_file"]},
     )
@@ -83,12 +119,14 @@ def build_channel_from_config(config: dict) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Build a BDSIM channel .gmad from a JSON config")
     parser.add_argument("--config", required=True, help="Path to JSON config file")
+    parser.add_argument("--template", required=True, help="Path to Jinja2 .tpl template file")
+    parser.add_argument("--output", required=True, help="Output path for the rendered .gmad file")
     args = parser.parse_args()
 
     with open(args.config) as f:
         config = json.load(f)
 
-    build_channel_from_config(config)
+    build_channel_from_config(config, args.template, args.output)
 
 
 if __name__ == "__main__":

@@ -52,13 +52,17 @@ class SolenoidCoil(BeamlineElement):
                  N_pancakes: int = 1, L_pancake: float = None, L_spacing: float = 0.0,
                  currDensity: float = None, Itot: float = None,
                  N_sheets: int = 10, fixed: bool = False, name: Optional[str] = None,
-                 material: str = "G4_Cu"):
+                 material: str = "G4_Cu",
+                 tilt_x: float = 0.0, tilt_y: float = 0.0, tilt_z: float = 0.0):
         super().__init__(z_center, name)
         self.r_in = r_in
         self.r_thick = r_thick
         self.N_sheets = N_sheets
         self.fixed = fixed
         self.material = material
+        self.tilt_x = tilt_x
+        self.tilt_y = tilt_y
+        self.tilt_z = tilt_z
 
         # --- Geometry ---
         if L is not None and L_pancake is not None:

@@ -52,7 +52,11 @@ cooldef1: coolingchannel,
 	magneticFieldMethod       = "{{ magnetic_field_method }}",
 	dipoleFieldModel          = "{{ dipole_field_model }}",
 	interpolator              = "{{ interpolator }}",
-	electricFieldModel        = "{{ electric_field_model }}";
+	electricFieldModel        = "{{ electric_field_model }}",
+	gridPointsPerMm           = {{ grid_points_per_mm }},
+	zPeriodStart              = {{ z_period_start }}*mm,
+	zPeriodEnd                = {{ z_period_end }}*mm,
+	periodLength              = {{ period_length }}*mm;
 
 
 mc1: muoncooler, l={{ total_length }}*m, horizontalWidth={{ total_width }}*m, coolingDefinition="cooldef1";
@@ -69,7 +73,7 @@ option, checkOverlaps=1,
         stopSecondaries=1,
         storeTrajectories=1,
         collimatorsAreInfiniteAbsorbers=1,
-        maximumStepLength=20*mm,
+        maximumStepLength=10*mm,
         integratorSet="geant4",
         physicsList="qgsp_bic em muon";
 
