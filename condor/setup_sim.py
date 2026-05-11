@@ -11,7 +11,8 @@ from src.pipeline import build_channel_from_config
 from condor.helper import makeFolders, renderDataGeneration, renderSubmitArgs, renderDoDataGeneration
 
 
-def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: str, gmad_name: str = None) -> str:
+def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: str,
+                     gmad_name: str = None, distr_file_override: str = None) -> str:
     """
     Create simDir, render a .gmad file into it, and copy the beam distribution file.
 
@@ -21,6 +22,8 @@ def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: s
         template (str): Path to the Jinja2 .tpl template file.
         beam_file (str): Path to the beam distribution file to copy into simDir.
         gmad_name (str): Override for the output .gmad filename (without directory).
+        distr_file_override (str): If provided, use this path in the gmad distrFile instead
+            of the one in the config, and skip copying the beam file into simDir.
 
     Returns:
         str: Path to the rendered .gmad file.
@@ -42,9 +45,12 @@ def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: s
 
     gmad_path = os.path.join(simDir, gmad_name)
 
-    build_channel_from_config(config, template, gmad_path)
+    if distr_file_override is not None:
+        config["beam"]["distr_file"] = distr_file_override
+    else:
+        shutil.copy2(beam_file, simDir)
 
-    shutil.copy2(beam_file, simDir)
+    build_channel_from_config(config, template, gmad_path)
 
     return gmad_path
 
@@ -99,8 +105,13 @@ def initialiseJob(
         for r in range(nReplicas)
     ]
 
+    beam_parent = os.path.dirname(replica_folders[0])
+    shutil.copy2(beam_file, beam_parent)
+    beam_rel = "../" + os.path.basename(beam_file)
+
     for folder, stem in zip(replica_folders, replica_stems):
-        setup_simulation(folder, channel_json, channel_template, beam_file, gmad_name=stem + ".gmad")
+        setup_simulation(folder, channel_json, channel_template, beam_file,
+                         gmad_name=stem + ".gmad", distr_file_override=beam_rel)
 
     job_output_dir = os.path.join(outputDir, jobId)
     os.makedirs(job_output_dir, exist_ok=True)

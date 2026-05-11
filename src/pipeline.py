@@ -2,6 +2,8 @@ import argparse
 import json
 from itertools import groupby
 
+import numpy as np
+
 from . import (
     MuonCoolingChannel,
     build_coil_beamline,
@@ -101,6 +103,21 @@ def build_channel_from_config(config: dict, tpl_path: str, out_gmad: str) -> Non
             else:
                 expanded[key] = [val] * n_coils
         channel.set_tilts(expanded)
+
+    tol_cfg = config.get("toleranceCoil")
+    if tol_cfg:
+        from .physics.elements import SolenoidCoil as _SC
+        rng = np.random.default_rng()
+        for coil in (e for e in channel.elements if isinstance(e, _SC)):
+            if tol_cfg.get("current", 0):
+                r = rng.normal(0, tol_cfg["current"])
+                coil.currDensity *= (1 + r)
+                coil._Itot_per_pancake *= (1 + r)
+            if tol_cfg.get("tilt", 0):
+                coil.tilt_x += rng.normal(0, tol_cfg["tilt"])
+                coil.tilt_y += rng.normal(0, tol_cfg["tilt"])
+            if tol_cfg.get("offset", 0):
+                coil.z_center *= (1 + rng.normal(0, tol_cfg["offset"]))
 
     samp_cfg = config["samplers"]
     beam_cfg = config["beam"]
