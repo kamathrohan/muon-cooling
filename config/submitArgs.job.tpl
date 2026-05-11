@@ -1,8 +1,9 @@
 executable = dataGeneration.sh
 getenv = True
-arguments = "$(CLUSTER) $(PROCESS)"
-output = $OUTPUT_DIR/outputfile.$(CLUSTER).$(PROCESS)
-error = $OUTPUT_DIR/errorfile.$(CLUSTER).$(PROCESS)
-log = $OUTPUT_DIR/example.job.$(CLUSTER).$(PROCESS).log
+OUTPUT_DIR = $ENV(OUTPUT_DIR)
+arguments = "$(OUTPUT_DIR) $(CLUSTER) $(PROCESS)"
+output = $(OUTPUT_DIR)/jobOutput/outputfile.$(CLUSTER).$(PROCESS)
+error = $(OUTPUT_DIR)/jobOutput/errorfile.$(CLUSTER).$(PROCESS)
+log = $(OUTPUT_DIR)/jobOutput/job.$(CLUSTER).$(PROCESS).log
 +MaxRuntime = {{ max_runtime }}
 queue
