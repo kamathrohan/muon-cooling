@@ -11,7 +11,7 @@ from src.pipeline import build_channel_from_config
 from condor.helper import makeFolders, renderDataGeneration, renderSubmitArgs, renderDoDataGeneration
 
 
-def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: str) -> str:
+def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: str, gmad_name: str = None) -> str:
     """
     Create simDir, render a .gmad file into it, and copy the beam distribution file.
 
@@ -20,6 +20,7 @@ def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: s
         channel_json (str): Path to the channel JSON config file.
         template (str): Path to the Jinja2 .tpl template file.
         beam_file (str): Path to the beam distribution file to copy into simDir.
+        gmad_name (str): Override for the output .gmad filename (without directory).
 
     Returns:
         str: Path to the rendered .gmad file.
@@ -36,7 +37,9 @@ def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: s
             f"distr_file '{expected_beam}' in {channel_json}"
         )
 
-    gmad_name = os.path.splitext(os.path.basename(channel_json))[0] + ".gmad"
+    if gmad_name is None:
+        gmad_name = os.path.splitext(os.path.basename(channel_json))[0] + ".gmad"
+
     gmad_path = os.path.join(simDir, gmad_name)
 
     build_channel_from_config(config, template, gmad_path)
@@ -93,8 +96,13 @@ def initialiseJob(
     job_sim_dir = os.path.join(simDir, jobId)
     replica_folders = makeFolders(job_sim_dir, jobId, iterNum, batchNum, nReplicas)
 
-    for folder in replica_folders:
-        setup_simulation(folder, channel_json, channel_template, beam_file)
+    replica_stems = [
+        f"channel_{jobId}_{iterNum}n_{batchNum}b_{r}r"
+        for r in range(nReplicas)
+    ]
+
+    for folder, stem in zip(replica_folders, replica_stems):
+        setup_simulation(folder, channel_json, channel_template, beam_file, gmad_name=stem + ".gmad")
 
     job_output_dir = os.path.join(outputDir, jobId)
     os.makedirs(job_output_dir, exist_ok=True)
@@ -116,6 +124,7 @@ def initialiseJob(
 
     renderDoDataGeneration(
         replica_folders=replica_folders,
+        outfiles=replica_stems,
         jobcard=jobcard,
         infile=infile,
         ngenerate=ngenerate,

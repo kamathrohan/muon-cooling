@@ -15,4 +15,4 @@ else
 fi
 
 cd $OUTPUT_DIR
-bdsim --file=$infile --batch --ngenerate=$ngenerate 
+bdsim --file=$infile --batch --ngenerate=$ngenerate  --outfile=$outfile
