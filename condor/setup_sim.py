@@ -131,6 +131,7 @@ def main():
     parser = argparse.ArgumentParser(description="Initialise all replica folders and render the dataGeneration script")
     parser.add_argument("--config", required=True, help="Path to job JSON config file")
     parser.add_argument("--job-id", required=True, help="Job identifier")
+    parser.add_argument("--run", action="store_true", default=False, help="Execute doDataGeneration.sh after setup")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -158,6 +159,10 @@ def main():
     print(f"Job '{args.job_id}' ready with {len(replica_folders)} replicas:")
     for folder in replica_folders:
         print(f"  {folder}")
+
+    if args.run:
+        do_datagen = os.path.join(cfg["outputDir"], args.job_id, "doDataGeneration.sh")
+        os.execv("/bin/bash", ["/bin/bash", do_datagen])
 
 
 if __name__ == "__main__":
