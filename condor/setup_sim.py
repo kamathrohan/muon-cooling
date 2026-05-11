@@ -161,7 +161,9 @@ def main():
         print(f"  {folder}")
 
     if args.run:
-        do_datagen = os.path.join(os.path.abspath(cfg["outputDir"]), args.job_id, "doDataGeneration.sh")
+        job_output_dir = os.path.join(os.path.abspath(cfg["outputDir"]), args.job_id)
+        do_datagen = os.path.join(job_output_dir, "doDataGeneration.sh")
+        os.chdir(job_output_dir)
         os.execv("/bin/bash", ["/bin/bash", do_datagen])
 
 
