@@ -92,6 +92,7 @@ def renderDoDataGeneration(
     ngenerate: int,
     out_path: str,
     tpl_path: str = "config/doDataGeneration.sh.tpl",
+    skiplines: List[int] = None,
 ) -> None:
     """
     Render the doDataGeneration.sh script with hardcoded replica folder paths.
@@ -103,12 +104,15 @@ def renderDoDataGeneration(
         ngenerate (int): Number of events to generate, passed via environment.
         out_path (str): Destination path for the rendered script.
         tpl_path (str): Path to the Jinja2 template file.
+        skiplines (List[int]): Lines to skip per replica; defaults to all zeros.
     """
+    if skiplines is None:
+        skiplines = [0] * len(replica_folders)
     tpl_dir = os.path.dirname(os.path.abspath(tpl_path))
     tpl_file = os.path.basename(tpl_path)
     env = Environment(loader=FileSystemLoader(tpl_dir), keep_trailing_newline=True)
     script = env.get_template(tpl_file).render(
-        replicas=list(zip(replica_folders, outfiles)),
+        replicas=list(zip(replica_folders, outfiles, skiplines)),
         jobcard=jobcard,
         ngenerate=ngenerate,
     )

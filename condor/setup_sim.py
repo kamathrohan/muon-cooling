@@ -84,6 +84,7 @@ def initialiseJob(
     env_setup: str,
     bdsim_setup: str,
     ngenerate: int,
+    split: bool = False,
 ) -> List[str]:
     """
     Set up all batch/replica simulation folders and render the dataGeneration script.
@@ -105,6 +106,8 @@ def initialiseJob(
         env_setup (str): Path to the environment setup script.
         bdsim_setup (str): Path to the BDSIM setup script.
         ngenerate (int): Number of events exported for bdsim.
+        split (bool): If True, divide ngenerate evenly across replicas and offset
+            each replica's skiplines by its within-batch index.
 
     Returns:
         List[str]: Paths to all replica folders across all batches.
@@ -112,9 +115,12 @@ def initialiseJob(
     beam_basename = os.path.basename(beam_file)
     beam_rel = "../" + beam_basename
 
+    effective_ngenerate = ngenerate // nReplicas if split else ngenerate
+
     rng = np.random.default_rng()
     all_folders = []
     all_stems = []
+    all_skiplines = []
 
     for b in range(nBatch):
         batch_folders = makeFolders(simDir, jobId, iterNum, b, nReplicas)
@@ -136,6 +142,10 @@ def initialiseJob(
 
         all_folders.extend(batch_folders)
         all_stems.extend(batch_stems)
+        if split:
+            all_skiplines.extend(effective_ngenerate * r for r in range(nReplicas))
+        else:
+            all_skiplines.extend([0] * nReplicas)
 
     job_output_dir = os.path.join(outputDir, jobId)
     os.makedirs(job_output_dir, exist_ok=True)
@@ -159,9 +169,10 @@ def initialiseJob(
         replica_folders=all_folders,
         outfiles=all_stems,
         jobcard=jobcard,
-        ngenerate=ngenerate,
+        ngenerate=effective_ngenerate,
         out_path=os.path.join(job_output_dir, "doDataGeneration.sh"),
         tpl_path=do_datagen_template,
+        skiplines=all_skiplines,
     )
 
     return all_folders
@@ -173,6 +184,7 @@ def main():
     parser.add_argument("--config", required=True, help="Path to job JSON config file")
     parser.add_argument("--job-id", required=True, help="Job identifier")
     parser.add_argument("--run", action="store_true", default=False, help="Execute doDataGeneration.sh after setup")
+    parser.add_argument("--split", action="store_true", default=False, help="Divide ngenerate evenly across replicas and offset skiplines per replica")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -195,6 +207,7 @@ def main():
         env_setup=cfg["env_setup"],
         bdsim_setup=cfg["bdsim_setup"],
         ngenerate=cfg["ngenerate"],
+        split=args.split,
     )
     print(f"Job '{args.job_id}' ready with {len(replica_folders)} replicas:")
     for folder in replica_folders:
