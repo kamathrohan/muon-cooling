@@ -13,5 +13,12 @@
   "max_runtime": 10000,
   "env_setup": "/path/to/env_setup.sh",
   "bdsim_setup": "/path/to/bdsim_setup.sh",
-  "ngenerate": 100
+  "ngenerate": 100,
+  "tolerance": {
+    "coil": {
+      "current": 0.0,
+      "tilt": 0.0,
+      "offset": 0.0
+    }
+  }
 }

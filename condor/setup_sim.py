@@ -84,6 +84,7 @@ def initialiseJob(
     env_setup: str,
     bdsim_setup: str,
     ngenerate: int,
+    tolerance: dict = None,
     split: bool = False,
 ) -> List[str]:
     """
@@ -106,6 +107,7 @@ def initialiseJob(
         env_setup (str): Path to the environment setup script.
         bdsim_setup (str): Path to the BDSIM setup script.
         ngenerate (int): Number of events exported for bdsim.
+        tolerance (dict): Tolerance config dict (e.g. {"coil": {"current": 0, ...}}).
         split (bool): If True, divide ngenerate evenly across replicas and offset
             each replica's skiplines by its within-batch index.
 
@@ -133,7 +135,9 @@ def initialiseJob(
         shutil.copy2(beam_file, beam_parent)
 
         tol_seed = int(rng.integers(0, 2**31))
-        extra = {"toleranceCoil": {"seed": tol_seed}}
+        coil_tol = dict((tolerance or {}).get("coil", {}))
+        coil_tol["seed"] = tol_seed
+        extra = {"tolerance": {"coil": coil_tol}}
 
         for folder, stem in zip(batch_folders, batch_stems):
             setup_simulation(folder, channel_json, channel_template, beam_file,
@@ -207,6 +211,7 @@ def main():
         env_setup=cfg["env_setup"],
         bdsim_setup=cfg["bdsim_setup"],
         ngenerate=cfg["ngenerate"],
+        tolerance=cfg.get("tolerance", {}),
         split=args.split,
     )
     print(f"Job '{args.job_id}' ready with {len(replica_folders)} replicas:")

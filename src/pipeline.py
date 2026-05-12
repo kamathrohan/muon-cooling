@@ -104,7 +104,7 @@ def build_channel_from_config(config: dict, tpl_path: str, out_gmad: str) -> Non
                 expanded[key] = [val] * n_coils
         channel.set_tilts(expanded)
 
-    tol_cfg = config.get("toleranceCoil")
+    tol_cfg = config.get("tolerance", {}).get("coil")
     if tol_cfg:
         from .physics.elements import SolenoidCoil as _SC
         rng = np.random.default_rng(tol_cfg.get("seed"))

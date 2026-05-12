@@ -80,11 +80,6 @@
     "tiltY": 0.0,
     "tiltZ": 0.0
   },
-  "toleranceCoil": {
-    "current": 0.0,
-    "tilt": 0.1,
-    "offset": 0.0
-  },
   "samplers": {
     "sampler_mode": "linspace",
     "sampler_kwargs": {
