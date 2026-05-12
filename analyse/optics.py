@@ -398,27 +398,46 @@ def plot_amplitude_pz_corr(optics, title=r'Amplitude--$p_z$ correlation',
     return fig
 
 
-def plot_all(optics, df_raw, r_max=None, s_max=None, show=True, save=None):
+def plot_all(optics, df_raw, r_max=None, s_max=None, cell_length=None,
+             show=True, save=None):
     """
     Render all five figures, optionally showing and/or saving them.
 
     Parameters
     ----------
-    optics  : DataFrame returned by compute_optics()
-    df_raw  : unfiltered DataFrame (used for the transmission plot)
-    r_max   : aperture cut passed to plot_transmission [same units as x, y]
-    s_max   : arc-length cut passed to plot_transmission
-    show    : bool — display figures interactively
-    save    : str or None — directory to save figures into; None skips saving
+    optics      : DataFrame returned by compute_optics()
+    df_raw      : unfiltered DataFrame (used for the transmission plot)
+    r_max       : aperture cut [m]
+    s_max       : zoom all plots to z <= s_max [m]; None shows full range
+    cell_length : if given, beta/momentum/a_pz_corr plots show only stations
+                  at multiples of cell_length [m] (e.g. 2.0 for 2 m cells)
+    show        : bool — display figures interactively
+    save        : str or None — directory to save figures into; None skips saving
     """
     import os
 
+    # Zoom optics to s_max [m] → mean_z is stored in mm
+    optics_cut = (optics[optics["mean_z"] <= s_max * 1000]
+                  if s_max is not None else optics)
+
+    # Cell-boundary filter: keep only stations at multiples of cell_length
+    if cell_length is not None:
+        cl_mm = round(cell_length * 1000)
+        optics_abs = optics_cut[
+            optics_cut["mean_z"].round().astype(int) % cl_mm == 0
+        ]
+    else:
+        optics_abs = optics_cut
+
+    # Transmission plot uses apply_cuts internally which expects mm
+    s_max_mm = s_max * 1000 if s_max is not None else None
+
     figs = {
-        "beta.png":         plot_beta(optics),
-        "emittance.png":    plot_emittance(optics),
-        "transmission.png": plot_transmission(df_raw, r_max=r_max, s_max=s_max),
-        "momentum.png":     plot_momentum(optics),
-        "a_pz_corr.png":    plot_amplitude_pz_corr(optics),
+        "beta.png":         plot_beta(optics_abs),
+        "emittance.png":    plot_emittance(optics_cut),
+        "transmission.png": plot_transmission(df_raw, r_max=r_max, s_max=s_max_mm),
+        "momentum.png":     plot_momentum(optics_abs),
+        "a_pz_corr.png":    plot_amplitude_pz_corr(optics_abs),
     }
 
     if save:
