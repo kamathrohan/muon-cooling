@@ -12,6 +12,7 @@ from . import (
     build_rf_beamline,
     render_gmad,
 )
+from .physics.elements import SolenoidCoil
 
 _COIL_TEMPLATE_KEYS = {"name", "r_in", "r_thick", "N_pancakes", "L_pancake",
                        "L_spacing", "currDensity", "N_sheets", "material"}
@@ -39,7 +40,7 @@ def build_channel_from_config(config: dict, tpl_path: str, out_gmad: str) -> Non
         period_length=ch_cfg.get("period_length", 2000),
     )
 
-    for fixed_val, group in groupby(config.get("coils") or [], key=lambda c: c["fixed"]):
+    for fixed_val, group in groupby(sorted(config.get("coils") or [], key=lambda c: c["fixed"]), key=lambda c: c["fixed"]):
         group_list = list(group)
         channel = build_coil_beamline(
             z_coils=[c["z_position"] for c in group_list],
@@ -83,13 +84,25 @@ def build_channel_from_config(config: dict, tpl_path: str, out_gmad: str) -> Non
             channel=channel,
         )
 
-    rf_phases = config.get("rf_phases")
-    if rf_phases:
+    rf_phasing = config.get("rf_phasing")
+    rf_phases  = config.get("rf_phases")
+    if rf_phasing and rf_phases:
+        raise ValueError("Specify either 'rf_phasing' (computed) or 'rf_phases' (explicit list), not both.")
+    if rf_phasing:
+        mode = rf_phasing.get("mode")
+        if mode == "compute":
+            channel.compute_rf_time_offsets(
+                momentum_MeV_c=rf_phasing["momentum_MeV_c"],
+                beam_start=rf_phasing["beam_start"],
+                mass_MeV_c=rf_phasing.get("mass_MeV_c", 105.66),
+            )
+        else:
+            raise ValueError(f"Unknown rf_phasing mode '{mode}'. Only 'compute' is supported.")
+    elif rf_phases:
         channel.set_rf_time_offsets(rf_phases)
 
     coil_tilts = config.get("coilTilts")
     if coil_tilts:
-        from .physics.elements import SolenoidCoil
         n_coils = sum(1 for e in channel.elements if isinstance(e, SolenoidCoil))
         expanded = {}
         for key in ("tiltX", "tiltY", "tiltZ"):
@@ -106,13 +119,12 @@ def build_channel_from_config(config: dict, tpl_path: str, out_gmad: str) -> Non
 
     tol_cfg = config.get("tolerance", {}).get("coil")
     if tol_cfg:
-        from .physics.elements import SolenoidCoil as _SC
         rng = np.random.default_rng(tol_cfg.get("seed"))
 
         def _draw(sigma):
             return np.clip(rng.normal(0, sigma), -3 * sigma, 3 * sigma)
 
-        for coil in (e for e in channel.elements if isinstance(e, _SC)):
+        for coil in (e for e in channel.elements if isinstance(e, SolenoidCoil)):
             if tol_cfg.get("current", 0):
                 r = _draw(tol_cfg["current"])
                 coil.currDensity *= (1 + r)

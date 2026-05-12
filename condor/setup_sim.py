@@ -10,7 +10,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.pipeline import build_channel_from_config
-from condor.helper import makeFolders, renderDataGeneration, renderSubmitArgs, renderDoDataGeneration
+from condor.helper import make_folders, render_data_generation, render_submit_args, render_do_data_generation
 
 
 def setup_simulation(simDir: str, channel_json: str, template: str, beam_file: str,
@@ -125,7 +125,7 @@ def initialiseJob(
     all_skiplines = []
 
     for b in range(nBatch):
-        batch_folders = makeFolders(simDir, jobId, iterNum, b, nReplicas)
+        batch_folders = make_folders(simDir, jobId, iterNum, b, nReplicas)
         batch_stems = [
             f"channel_{jobId}_{iterNum}n_{b}b_{r}r"
             for r in range(nReplicas)
@@ -155,7 +155,7 @@ def initialiseJob(
     os.makedirs(job_output_dir, exist_ok=True)
 
     datagen_out = os.path.join(job_output_dir, "dataGeneration.sh")
-    renderDataGeneration(
+    render_data_generation(
         env_setup=env_setup,
         bdsim_setup=bdsim_setup,
         out_path=datagen_out,
@@ -163,13 +163,13 @@ def initialiseJob(
     )
 
     jobcard = os.path.join(job_output_dir, "submitArgs.job")
-    renderSubmitArgs(
+    render_submit_args(
         max_runtime=max_runtime,
         out_path=jobcard,
         tpl_path=submit_template,
     )
 
-    renderDoDataGeneration(
+    render_do_data_generation(
         replica_folders=all_folders,
         outfiles=all_stems,
         jobcard=jobcard,

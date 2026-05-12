@@ -1,12 +1,11 @@
 from ..physics.elements import Dipole, Absorber, RFCavity
 from ..physics.beamline import MuonCoolingChannel
+from ..physics.translate import MUON_MASS_MEV as MUON_MASS_MEV_C2
 from .template import (
     fmt_array, fmt_mm_array, fmt_str_array,
     generate_sampler_lines, generate_sampler_lines_from_positions,
     generate_beam_block, render_template,
 )
-
-MUON_MASS_MEV_C2 = 105.66
 
 
 def render_gmad(beamline: MuonCoolingChannel,
@@ -40,6 +39,7 @@ def render_gmad(beamline: MuonCoolingChannel,
     global_offset = half_length
     for elem in beamline.elements:
         if not (-half_length <= elem.z_center <= half_length):
+            z_global = elem.z_center + global_offset
             raise ValueError(
                 f"Element '{elem.name}' at local z={elem.z_center}m (global z={z_global}m) "
                 f"exceeds channel bounds ±{half_length}m (total_length={beamline.total_length}m)"

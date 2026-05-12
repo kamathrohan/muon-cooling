@@ -60,7 +60,7 @@ absorber_template = {
     'absorber_type': 'wedge',
     'material': 'G4_LITHIUM_HYDRIDE',
     'wedge_opening_angle': 0.17453292519943295,
-    'wedge_height': 0.2857,
+    'wedge_height': 0.28571,
     'wedge_apex_to_base': 0.28571
 }
 
@@ -93,7 +93,7 @@ channel = build_dipole_beamline(
 channel = build_absorber_beamline(
     n_cells = 129,
     absorber_template=absorber_template,
-    channel=channel, offsetX = 0.0, wedge_alignment_angle1=np.pi/2, wedge_alignment_angle2=-np.pi/2
+    channel=channel, wedge_alignment_angle1=0.0, wedge_alignment_angle2=np.pi
 )
 
 channel = build_rf_beamline(
@@ -108,10 +108,13 @@ channel = build_rf_beamline(
 
 
 
+n_coils = sum(1 for e in channel.elements if hasattr(e, 'tilt_x'))
+channel.set_tilts({"tiltX": [10.0] * n_coils, "tiltY": [20.0] * n_coils, "tiltZ": [30.0] * n_coils})
+
 with open("config/rfPhases.json") as f:
     rf_phases = json.load(f)
 channel.set_rf_time_offsets(rf_phases["closedOrbit"])
-render_gmad(channel, "config/channel.tpl", "output/channelnew.gmad",
+render_gmad(channel, "config/channel.tpl", "output/channeltest.gmad",
             sampler_mode="linspace",
             sampler_kwargs={"n": 200, "start_m": -65, "end_m": 65},
             beam_mode="beam", beam_kwargs={"distr_file": "beam_bdsim4.dat"})

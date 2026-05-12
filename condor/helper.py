@@ -4,7 +4,7 @@ from typing import List
 
 from jinja2 import Environment, FileSystemLoader
 
-def makeFolders(simPath, jobID, iterNum, batchNum, nReplicas):
+def make_folders(simPath, jobID, iterNum, batchNum, nReplicas):
     """
     Create the necessary folders for storing simulation results.
 
@@ -38,7 +38,7 @@ def makeFolders(simPath, jobID, iterNum, batchNum, nReplicas):
     return replicaFolders
 
 
-def renderDataGeneration(
+def render_data_generation(
     env_setup: str,
     bdsim_setup: str,
     out_path: str,
@@ -64,7 +64,7 @@ def renderDataGeneration(
     os.chmod(out_path, 0o755)
 
 
-def renderSubmitArgs(
+def render_submit_args(
     max_runtime: int,
     out_path: str,
     tpl_path: str = "config/submitArgs.job.tpl",
@@ -85,7 +85,7 @@ def renderSubmitArgs(
         f.write(script)
 
 
-def renderDoDataGeneration(
+def render_do_data_generation(
     replica_folders: List[str],
     outfiles: List[str],
     jobcard: str,
@@ -121,7 +121,7 @@ def renderDoDataGeneration(
     os.chmod(out_path, 0o755)
 
 
-def copyToFolders(src: str, folders: List[str]) -> None:
+def copy_to_folders(src: str, folders: List[str]) -> None:
     """
     Copy a file into each folder in the list.
 

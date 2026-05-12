@@ -5,6 +5,22 @@ from .elements import SolenoidCoil, Dipole, Absorber, RFCavity
 from .beamline import MuonCoolingChannel
 
 
+def _resolve_channel(channel, n_cells, cell_length, name="Channel", polarities=None):
+    """Validate n_cells/cell_length against an existing channel, or create a new one."""
+    if channel is not None:
+        if cell_length is not None and not np.isclose(cell_length, channel.cell_length):
+            raise ValueError(f"cell_length {cell_length} != channel.cell_length {channel.cell_length}")
+        if n_cells is not None and n_cells > channel.n_cells:
+            raise ValueError(f"n_cells {n_cells} > channel.n_cells {channel.n_cells}")
+        resolved_n = n_cells if n_cells is not None else channel.n_cells
+        return channel, resolved_n, channel.cell_length
+    if cell_length is None or n_cells is None:
+        raise ValueError("Must provide n_cells and cell_length if channel is None")
+    channel = MuonCoolingChannel(n_cells=n_cells, cell_length=cell_length,
+                                 total_width=1.0, name=name, polarities=polarities)
+    return channel, n_cells, cell_length
+
+
 def coil_placement_z(n_cells, cell_length, coil_cell_z):
     coil_global_z = []
     if n_cells % 2 != 0:
@@ -89,20 +105,9 @@ def build_coil_beamline(N_cells=None, L_cell=None, z_coils=None, coil_templates=
     -------
     MuonCoolingChannel object with all channel coils
     """
-    if channel is not None:
-        if L_cell is not None and not np.isclose(L_cell, channel.cell_length):
-            raise ValueError(f"L_cell {L_cell} != channel.cell_length {channel.cell_length}")
-        L_cell = channel.cell_length
-        if N_cells is not None and N_cells > channel.n_cells:
-            raise ValueError(f"N_cells {N_cells} != channel.n_cells {channel.n_cells}")
-        N_cells = channel.n_cells
-    elif L_cell is None or N_cells is None:
-        raise ValueError("Must provide N_cells and L_cell if channel is None")
+    channel, N_cells, L_cell = _resolve_channel(channel, N_cells, L_cell, name=name)
 
     positions = build_periodic_channel(N_cells, L_cell, z_coils, polarities)
-
-    if channel is None:
-        channel = MuonCoolingChannel(n_cells=N_cells, cell_length=L_cell, total_width=1.0, name=name)
 
     for i, pos in enumerate(positions):
         tmpl = coil_templates[pos['coil_type']]
@@ -148,20 +153,8 @@ def build_dipole_beamline(n_cells=None, cell_length=None, coil_cell_z=None, dipo
     -------
     MuonCoolingChannel object with dipoles added
     """
-    if channel is not None:
-        if cell_length is not None and not np.isclose(cell_length, channel.cell_length):
-            raise ValueError(f"cell_length {cell_length} != channel.cell_length {channel.cell_length}")
-        cell_length = channel.cell_length
-        if n_cells is not None and n_cells > channel.n_cells:
-            raise ValueError(f"n_cells {n_cells} != channel.n_cells {channel.n_cells}")
-        if n_cells is None: 
-            n_cells = channel.n_cells
-    elif cell_length is None or n_cells is None:
-        raise ValueError("Must provide n_cells and cell_length if channel is None")
-
-    if channel is None:
-        channel = MuonCoolingChannel(n_cells=n_cells, cell_length=cell_length, total_width=1.0, name=name,
-                                     polarities=polarities)
+    channel, n_cells, cell_length = _resolve_channel(channel, n_cells, cell_length,
+                                                      name=name, polarities=polarities)
 
     positions = coil_placement_z(n_cells, cell_length, coil_cell_z)
 
@@ -204,19 +197,7 @@ def build_absorber_beamline(n_cells=None, cell_length=None, absorber_template=No
     offsetX                : float - Wedge x-offset magnitude; sign alternates per cell [m]
     channel                : MuonCoolingChannel - Existing channel to add elements to
     """
-    if channel is not None:
-        if cell_length is not None and not np.isclose(cell_length, channel.cell_length):
-            raise ValueError(f"cell_length {cell_length} != channel.cell_length {channel.cell_length}")
-        cell_length = channel.cell_length
-        if n_cells is not None and n_cells > channel.n_cells:
-            raise ValueError(f"n_cells {n_cells} != channel.n_cells {channel.n_cells}")
-        if n_cells is None:
-            n_cells = channel.n_cells
-    elif cell_length is None or n_cells is None:
-        raise ValueError("Must provide n_cells and cell_length if channel is None")
-
-    if channel is None:
-        channel = MuonCoolingChannel(n_cells=n_cells, cell_length=cell_length, total_width=1.0, name=name)
+    channel, n_cells, cell_length = _resolve_channel(channel, n_cells, cell_length, name=name)
 
     z_start = -n_cells * cell_length / 2
 
@@ -238,7 +219,6 @@ def build_absorber_beamline(n_cells=None, cell_length=None, absorber_template=No
     return channel
 
 
-
 def build_rf_beamline(n_cells=None, cell_length=None, n_rf_cells=None, rf_spacing=None,
                       rf_template=None, fixed=True, name="RFChannel", channel: MuonCoolingChannel = None):
     """Place n_rf_cells RF cavities per cell in a MuonCoolingChannel.
@@ -254,19 +234,7 @@ def build_rf_beamline(n_cells=None, cell_length=None, n_rf_cells=None, rf_spacin
     name        : str      - Beamline name (if channel is None)
     channel     : MuonCoolingChannel - Existing channel to add elements to
     """
-    if channel is not None:
-        if cell_length is not None and not np.isclose(cell_length, channel.cell_length):
-            raise ValueError(f"cell_length {cell_length} != channel.cell_length {channel.cell_length}")
-        cell_length = channel.cell_length
-        if n_cells is not None and n_cells > channel.n_cells:
-            raise ValueError(f"n_cells {n_cells} != channel.n_cells {channel.n_cells}")
-        if n_cells is None:
-            n_cells = channel.n_cells
-    elif cell_length is None or n_cells is None:
-        raise ValueError("Must provide n_cells and cell_length if channel is None")
-
-    if channel is None:
-        channel = MuonCoolingChannel(n_cells=n_cells, cell_length=cell_length, total_width=1.0, name=name)
+    channel, n_cells, cell_length = _resolve_channel(channel, n_cells, cell_length, name=name)
 
     z_start  = -n_cells * cell_length / 2
     rf_count = 0
