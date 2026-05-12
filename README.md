@@ -20,6 +20,12 @@ Python toolkit for designing muon ionization cooling channels and rendering them
    - [generate_beam_block](#generate_beam_block)
 6. [Beam file translation](#beam-file-translation)
 7. [JSON-driven pipeline](#json-driven-pipeline)
+8. [Condor job setup](#condor-job-setup)
+9. [Analysis](#analysis)
+   - [loader.py](#loaderpy)
+   - [optics.py](#opticspy)
+   - [bdsim_to_g4bl](#bdsim_to_g4bl)
+   - [plot_channel.py](#plot_channelpy)
 
 ---
 
@@ -42,13 +48,18 @@ muon-cooling/
 ├── src/
 │   ├── physics/          # element classes, beamline, builders, translation
 │   ├── rendering/        # GMAD rendering and Jinja2 templating
-│   ├── pipeline.py       # config-driven build (JSON → gmad)
-│   └── run.py            # config-driven build + simulate + analyse
-├── analyse/              # post-processing scripts and notebooks
-├── config/               # Jinja2 template and JSON config
-├── scripts/              # HPC job scripts
+│   └── pipeline.py       # config-driven build (JSON → gmad)
+├── analyse/
+│   ├── loader.py         # file discovery, ROOT reading, CSV loading
+│   ├── optics.py         # emittance, beta, optics calculations and plots
+│   └── bdsim_to_g4bl.py  # convert BDSIM DataFrame to G4BL/ICOOL track format
+├── condor/
+│   ├── helper.py         # Condor script rendering and folder utilities
+│   └── setup_sim.py      # job initialisation (folders, gmad, beam file)
+├── config/               # Jinja2 templates and JSON configs
 ├── output/               # simulation artefacts (gitignored)
-└── quickstart.py         # working example
+├── quickstart.py         # channel build example
+└── plot_channel.py       # analysis CLI and importable run() function
 ```
 
 ---
@@ -56,6 +67,8 @@ muon-cooling/
 ## Quickstart
 
 ```python
+import json
+import numpy as np
 from src import (
     MuonCoolingChannel,
     build_coil_beamline, build_dipole_beamline,
@@ -64,38 +77,46 @@ from src import (
 )
 
 channel = MuonCoolingChannel(
-    n_cells=10, cell_length=1.0, total_length=170.0,
+    n_cells=151, cell_length=1.0, total_length=170.0,
     total_width=0.8, reference_momentum=200.0, on_axis_tolerance=2e-5,
+    magnetic_field_model="solenoidblock", magnetic_field_method="grid",
+    grid_points_per_mm=1.0,
+    z_period_start=-70000, z_period_end=175000, period_length=2000,
 )
 
-coil_1 = dict(name='Coil1', r_in=0.285, r_thick=0.070,
-              N_pancakes=17, L_pancake=0.012, L_spacing=0.004,
-              currDensity=328.43, N_sheets=5)
 coil_2 = dict(name='Coil2', r_in=0.185, r_thick=0.060,
               N_pancakes=5, L_pancake=0.012, L_spacing=0.003,
               currDensity=300.0, N_sheets=5)
-dipole  = dict(name='Dipole', field_strength=0.2,
-               aperture=0.2, length_z=0.1, enge_coefficient=5.5)
+coil_1 = dict(name='Coil1', r_in=0.285, r_thick=0.070,
+              N_pancakes=17, L_pancake=0.012, L_spacing=0.004,
+              currDensity=328.43, N_sheets=5)
+dipole   = dict(name='Dipole', field_strength=0.2,
+                aperture=0.2, length_z=0.1, enge_coefficient=5.5)
 absorber = dict(name='Absorber', absorber_type='wedge',
                 material='G4_LITHIUM_HYDRIDE',
-                wedge_opening_angle=0.1745, wedge_height=0.24,
-                wedge_apex_to_base=0.1134256)
+                wedge_opening_angle=0.1745, wedge_height=0.28571,
+                wedge_apex_to_base=0.28571)
 rf = dict(name='RF', length=0.18856, voltage=30.0,
-          phase=-1.5708+0.3491, frequency=704e6,
+          phase=-1.5707963267948966 + 0.3490658503988659, frequency=704e6,
           cavity_radius=0.163, cavity_thickness=0.003, cavity_material='G4_Cu')
 
 channel = build_coil_beamline(z_coils=[0.081, 0.211],
                               coil_templates=[coil_2, coil_1],
                               polarities=[1, 1], fixed=True, channel=channel)
 channel = build_dipole_beamline(coil_cell_z=0.025, dipole_template=dipole, channel=channel)
-channel = build_absorber_beamline(absorber_template=absorber, channel=channel)
-channel = build_rf_beamline(n_rf_cells=3, rf_spacing=0.1946, rf_template=rf, channel=channel)
+channel = build_absorber_beamline(n_cells=129, absorber_template=absorber,
+                                  wedge_alignment_angle1=0.0, wedge_alignment_angle2=np.pi,
+                                  channel=channel)
+channel = build_rf_beamline(n_cells=129, n_rf_cells=3, rf_spacing=0.1946,
+                            rf_template=rf, channel=channel)
 
-channel.summary()
+with open("config/rfPhases.json") as f:
+    rf_phases = json.load(f)
+channel.set_rf_time_offsets(rf_phases["closedOrbit"])
 
 render_gmad(channel, "config/channel.tpl", "output/channel.gmad",
             sampler_mode="linspace",
-            sampler_kwargs={"n": 120, "start_m": -3.0, "end_m": 3.0},
+            sampler_kwargs={"n": 200, "start_m": -65, "end_m": 65},
             beam_mode="beam", beam_kwargs={"distr_file": "beam_bdsim.dat"})
 ```
 
@@ -103,7 +124,7 @@ render_gmad(channel, "config/channel.tpl", "output/channel.gmad",
 bdsim --file=output/channel.gmad --outfile=output --ngenerate=1000
 ```
 
-See `quickstart.py` for the full 151-cell example.
+See `quickstart.py` for the full working example.
 
 ---
 
@@ -137,6 +158,11 @@ SolenoidCoil(
     fixed       : bool  = False,
     material    : str   = "G4_Cu",
     name        : str   = None,
+
+    # misalignment
+    tilt_x      : float = 0.0,   # [rad]
+    tilt_y      : float = 0.0,   # [rad]
+    tilt_z      : float = 0.0,   # [rad]
 )
 ```
 
@@ -178,14 +204,14 @@ Absorber(
 )
 ```
 
-`wedge_rotation_angle` alternates between cells (e.g. `[π, 0]`) to flip the wedge orientation and achieve alternating dispersion.
+`wedge_rotation_angle` alternates between cells to flip the wedge orientation and achieve alternating dispersion.
 
 #### RFCavity
 
 ```python
 RFCavity(
     z_center              : float,
-    time_offset           : float = 0.0,              # transit time [ns] — set automatically
+    time_offset           : float = None,             # transit time [ns] — set before rendering
     length                : float = 0.18856,
     voltage               : float = 30.0,             # peak voltage [MV]
     phase                 : float = -π/2 + 0.349,
@@ -202,7 +228,7 @@ RFCavity(
 )
 ```
 
-`time_offset` is normally set automatically by `compute_rf_time_offsets()`.
+`time_offset` must be set before rendering, either via `compute_rf_time_offsets()` or `set_rf_time_offsets()`.
 
 ---
 
@@ -244,6 +270,10 @@ channel = MuonCoolingChannel(
     reference_momentum   : float = 200.0,             # [MeV/c]
     on_axis_tolerance    : float = 2e-2,
     polarities           : list[int] = None,          # default [1, -1, -1, 1]
+    grid_points_per_mm   : float = 0.1,
+    z_period_start       : float = -70000,            # [mm]
+    z_period_end         : float = 175000,            # [mm]
+    period_length        : float = 2000,              # [mm]
 )
 ```
 
@@ -256,6 +286,22 @@ offsets = channel.compute_rf_time_offsets(
     mass_MeV_c     = 105.66,
 )
 # returns {cavity_name: time_offset_ns, ...}
+```
+
+**`set_rf_time_offsets`** — manually set time offsets from an array (e.g. loaded from a JSON file):
+
+```python
+channel.set_rf_time_offsets(offsets)   # array-like, one value per RFCavity in order
+```
+
+**`set_tilts`** — apply per-coil tilt angles to all `SolenoidCoil` elements:
+
+```python
+channel.set_tilts({
+    "tiltX": [...],   # array of length n_coils [rad]
+    "tiltY": [...],
+    "tiltZ": [...],
+})
 ```
 
 **`getCellStarts`** — returns `[[z_global, sign], ...]` at the start of each cell, with polarity sign derived from `self.polarities`.
@@ -300,14 +346,17 @@ Template keys: `name`, `field_strength`, `aperture`, `length_z`, `enge_coefficie
 
 ```python
 channel = build_absorber_beamline(
-    absorber_template : dict,
-    rotation_angles   : list[float] = [π, 0.0],   # cycled per cell
-    fixed             : bool = True,
-    channel           : MuonCoolingChannel = None,
+    absorber_template      : dict,
+    n_cells                : int   = None,        # defaults to channel.n_cells
+    wedge_alignment_angle1 : float = math.pi,     # rotation for even sub-cells [rad]
+    wedge_alignment_angle2 : float = 0.0,         # rotation for odd sub-cells [rad]
+    offsetX                : float = 0.0,         # x-offset magnitude; sign alternates [m]
+    fixed                  : bool  = True,
+    channel                : MuonCoolingChannel = None,
 )
 ```
 
-Places one absorber per cell at the cell centre. `wedge_rotation_angle` cycles through `rotation_angles`.
+Places one absorber per cell at the cell centre. Wedge rotation strictly alternates by cell index parity.
 
 Template keys: `name`, `absorber_type`, `material`, `cylinder_length`, `cylinder_radius`, `wedge_opening_angle`, `wedge_height`, `wedge_apex_to_base`
 
@@ -316,9 +365,10 @@ Template keys: `name`, `absorber_type`, `material`, `cylinder_length`, `cylinder
 ```python
 channel = build_rf_beamline(
     n_rf_cells  : int,
-    rf_spacing  : float,   # spacing between cavities [m]
+    rf_spacing  : float,            # spacing between cavities [m]
     rf_template : dict,
-    fixed       : bool = True,
+    n_cells     : int   = None,     # defaults to channel.n_cells
+    fixed       : bool  = True,
     channel     : MuonCoolingChannel = None,
 )
 ```
@@ -343,7 +393,9 @@ All per-element DataFrames accept an optional `global_z_offset` keyword (default
 ```python
 channel.build_pancake_dataframe()
 # one row per sub-pancake: coil_name, coil_index, pancake_index,
-# z_center, Itot_pancake, currDensity, polarity, r_in, r_thick, L_pancake, ...
+# z_center, z_coil_center, Itot_pancake, currDensity, polarity,
+# r_in, r_thick, L_pancake, fixed, material,
+# coil_offset_x, coil_offset_y, coil_tilt_x, coil_tilt_y, coil_tilt_z
 
 channel.build_dipole_dataframe(global_z_offset=0.0)
 # name, z_local, z_global, field_strength, aperture, length_z, enge_coefficient, fixed
@@ -365,7 +417,7 @@ channel.build_elements_dataframe(global_z_offset=0.0)
 
 ### render_gmad
 
-Renders a fully populated BDSIM `.gmad` from a `MuonCoolingChannel` and a Jinja2 template. Automatically syncs RF time offsets, builds the pancake DataFrame, formats all arrays as BDSIM `{...}` literals, and writes the file.
+Renders a fully populated BDSIM `.gmad` from a `MuonCoolingChannel` and a Jinja2 template. Validates element bounds and that all RF cavities have `time_offset` set, builds the pancake DataFrame, formats all arrays as BDSIM `{...}` literals, and writes the file.
 
 ```python
 render_gmad(
@@ -384,7 +436,7 @@ render_gmad(
 ```python
 render_gmad(channel, "config/channel.tpl", "output/channel.gmad",
             sampler_mode="linspace",
-            sampler_kwargs={"n": 120, "start_m": -3.0, "end_m": 3.0,
+            sampler_kwargs={"n": 200, "start_m": -65, "end_m": 65,
                             "aper_m": 5.0},
             beam_mode="beam", beam_kwargs={"distr_file": "beam_bdsim.dat"})
 ```
@@ -395,7 +447,7 @@ render_gmad(channel, "config/channel.tpl", "output/channel.gmad",
 import numpy as np
 render_gmad(channel, "config/channel.tpl", "output/channel.gmad",
             sampler_mode="positions",
-            sampler_kwargs={"positions_m": np.linspace(-3.0, 3.0, 120),
+            sampler_kwargs={"positions_m": np.linspace(-65, 65, 200),
                             "aper_m": 5.0},
             beam_mode="beam", beam_kwargs={"distr_file": "beam_bdsim.dat"})
 ```
@@ -410,8 +462,6 @@ render_gmad(channel, "config/channel.tpl", "output/channel.gmad",
 | `aper_m` | both | 5.0 |
 | `reference_element` | both | `"mc1"` |
 | `reference_element_number` | both | 0 |
-
-The template (`config/channel.tpl`) is a Jinja2 file that defines the BDSIM material block, `cooldef1` (coolingchannel element), `mc1` (muoncooler), lattice line, options, and the injected `{{ sampler_lines }}` / `{{ beam_block }}` sections.
 
 ### generate_sampler_lines
 
@@ -490,13 +540,16 @@ Output columns: `T X Y Z xp yp zp P E` — T in ns, positions in m, direction co
 
 ## JSON-driven pipeline
 
-`src/pipeline.py` and `src/run.py` are a config-driven alternative to scripting the workflow by hand. Everything is described in `config/channel.json`; set any optional section to `null` to skip it.
+`src/pipeline.py` is a config-driven alternative to scripting the workflow by hand. Everything is described in `config/channel.json`; set any optional section to `null` to skip it.
 
 ```json
 {
   "channel": {
     "n_cells": 151, "cell_length": 1.0, "total_length": 170.0,
-    "total_width": 0.8, "reference_momentum": 200.0, "on_axis_tolerance": 2e-5
+    "total_width": 0.8, "reference_momentum": 200.0, "on_axis_tolerance": 2e-5,
+    "magnetic_field_model": "solenoidblock", "magnetic_field_method": "grid",
+    "grid_points_per_mm": 1.0,
+    "z_period_start": -70000, "z_period_end": 175000, "period_length": 2000
   },
   "coils": [
     {
@@ -514,22 +567,33 @@ Output columns: `T X Y Z xp yp zp P E` — T in ns, positions in m, direction co
     "coil_cell_z": 0.025, "name": "Dipole", "field_strength": 0.2,
     "aperture": 0.2, "length_z": 0.1, "enge_coefficient": 5.5
   },
-  "absorber": null,
-  "rf": null,
-  "output": {
-    "template_path": "config/channel.tpl", "gmad_path": "output/channel.gmad",
-    "output_name": "channel", "n_events": 100
+  "absorber": {
+    "name": "Absorber", "absorber_type": "wedge", "material": "G4_LITHIUM_HYDRIDE",
+    "wedge_opening_angle": 0.1745, "wedge_height": 0.28571, "wedge_apex_to_base": 0.28571,
+    "wedge_alignment_angle1": 0.0, "wedge_alignment_angle2": 3.14159,
+    "wedge_offset_x": 0.0, "n_cells": 129
+  },
+  "rf": {
+    "name": "RF", "length": 0.18856, "voltage": 30.0, "frequency": 704e6,
+    "cavity_radius": 0.163, "cavity_thickness": 0.003, "cavity_material": "G4_Cu",
+    "n_rf_cells": 3, "rf_spacing": 0.1946, "n_cells": 129
+  },
+  "rf_phases": [0.0, 1.23, ...],
+  "coilTilts": {
+    "tiltX": 0.0, "tiltY": 0.0, "tiltZ": 0.0
+  },
+  "tolerance": {
+    "coil": { "current": 0.001, "tilt": 0.0005, "offset": 0.0, "seed": 42 }
   },
   "samplers": {
-    "n_samplers": 120, "sampler_start_m": -3, "sampler_end_m": 3,
-    "n_particles_per_sampler": 3
+    "sampler_mode": "linspace",
+    "sampler_kwargs": { "n": 200, "start_m": -65, "end_m": 65 }
   },
-  "beam": { "mode": "beam", "distr_file": "beam_bdsim.dat" },
-  "analysis": { "output_csv": "output/sampler_data.csv" }
+  "beam": { "mode": "beam", "distr_file": "beam_bdsim.dat" }
 }
 ```
 
-`coils` are grouped by `fixed` value — coils sharing the same `fixed` should be contiguous. `rf` must also include `n_rf_cells` and `rf_spacing`.
+`coils` are grouped by `fixed` value — coils sharing the same `fixed` should be contiguous. `rf` must include `n_rf_cells` and `rf_spacing`. `rf_phases` and `rf_phasing` are mutually exclusive: use `rf_phases` for an explicit array of time offsets, or `rf_phasing: {"mode": "compute", "momentum_MeV_c": ..., "beam_start": ...}` to compute them automatically. `coilTilts` accepts either a scalar (applied to all coils) or an array of length equal to the number of solenoid coils.
 
 ### pipeline.py — build only
 
@@ -540,27 +604,192 @@ import json
 with open("config/channel.json") as f:
     config = json.load(f)
 
-build_channel_from_config(config)
+build_channel_from_config(config, "config/channel.tpl", "output/channel.gmad")
 ```
 
 ```bash
-python -m src.pipeline --config config/channel.json
+python -m src.pipeline --config config/channel.json \
+    --template config/channel.tpl --output output/channel.gmad
 ```
 
-### run.py — build, simulate, and analyse
+---
 
-Calls `build_channel_from_config`, runs BDSIM via `pybdsim.Run.Bdsim`, then extracts sampler data to CSV.
+## Condor job setup
+
+`condor/helper.py` and `condor/setup_sim.py` automate setting up batches of HTCondor simulation jobs.
+
+### setup_simulation
+
+Renders a single simulation directory with a `.gmad` file and beam distribution copy:
 
 ```python
-from src.run import run_from_config
-import json
+from condor.setup_sim import setup_simulation
 
-with open("config/channel.json") as f:
-    config = json.load(f)
+gmad_path = setup_simulation(
+    simDir              : str,   # directory to create
+    channel_json        : str,   # path to channel JSON config
+    template            : str,   # path to Jinja2 .tpl file
+    beam_file           : str,   # beam distribution to copy in
+    gmad_name           : str  = None,    # override output filename
+    distr_file_override : str  = None,    # override path in gmad (skip copy)
+    extra_config        : dict = None,    # shallow-merged into config before render
+)
+# returns path to rendered .gmad
+```
 
-run_from_config(config)
+### initialiseJob
+
+Sets up all batch/replica folders, renders the `.gmad` into each one, and writes the Condor submission scripts:
+
+```python
+from condor.setup_sim import initialiseJob
+
+replica_folders = initialiseJob(
+    simDir, outputDir, jobId, iterNum,
+    nBatch, nReplicas,
+    channel_json, beam_file, channel_template,
+    datagen_template, submit_template, do_datagen_template,
+    max_runtime, env_setup, bdsim_setup, ngenerate,
+    tolerance = {"coil": {"current": 0.001, "tilt": 0.0, "offset": 0.0}},
+    split     = False,   # if True, divides ngenerate across replicas
+)
+```
+
+Each batch draws a fresh random seed for coil tolerances. `split=True` divides `ngenerate` evenly across replicas and staggers `skiplines` so each replica reads a disjoint slice of the beam file.
+
+```bash
+python condor/setup_sim.py --config config/job.json --job-id run01 [--split] [--run]
+```
+
+`--run` immediately executes `doDataGeneration.sh` after setup.
+
+---
+
+## Analysis
+
+Post-processing tools live in `analyse/`. They are independent of the `src/` build pipeline and work on BDSIM sampler output.
+
+### loader.py
+
+File discovery, ROOT reading, and CSV loading.
+
+```python
+from analyse.loader import find_files, load_sims, analyze_root_file
+
+# find files
+txt_files = find_files("/path/to/sims")               # default pattern "*.txt"
+csv_files = find_files("/path/to/sims", "*.csv")
+
+# load and concatenate — tags each row with SimName from the filename stem
+df = load_sims(txt_files)
+
+# read a BDSIM ROOT file into a DataFrame (saves .csv alongside by default)
+df, csv_path = analyze_root_file("output/channel.root")
+df           = analyze_root_file("output/channel.root", save=False)
+```
+
+`load_sims` expects each file to be a CSV with at least `S`, `x`, `y`, `z`, `xp`, `yp`, `zp`, `p`, `energy`, `T`, `weight`, `trackID`, `samplerName` columns.
+
+### optics.py
+
+Emittance, beta function, and optics calculations, plus publication-quality plots.
+
+#### Cuts
+
+```python
+from analyse.optics import apply_cuts
+
+df = apply_cuts(
+    df,
+    r_max       = 0.0819,    # transverse aperture cut [m]; None to disable
+    s_max       = 100000,    # keep S <= s_max [mm]; None to disable
+    transmitted = True,      # keep only particles reaching the last station
+)
+```
+
+#### Optics calculation
+
+```python
+from analyse.optics import compute_optics
+
+optics = compute_optics(df)
+# columns: samplerName, mean_z [mm], emittance_trans, emittance_long, emittance_6d,
+#          beta_x, beta_y [mm], mean_p [MeV/c], transmission [%], a_pz_corr
+```
+
+All emittances are normalised RMS values. Units: transverse/longitudinal in mm·rad, 6D in mm³·rad³.
+
+#### Individual physics functions
+
+```python
+from analyse.optics import (
+    transverse_emittance,    # normalised 4D transverse emittance [mm]
+    longitudinal_emittance,  # normalised longitudinal emittance [mm]
+    emittance_6d,            # normalised 6D emittance [mm³]
+    beta_function,           # (beta_x, beta_y) [mm]
+    amplitude_pz_correlation,
+)
+
+eps_t = transverse_emittance(group)     # group is a per-station DataFrame slice
+beta_x, beta_y = beta_function(group)
+```
+
+#### Plotting
+
+```python
+from analyse.optics import (
+    plot_beta, plot_emittance, plot_transmission,
+    plot_momentum, plot_amplitude_pz_corr,
+    plot_all, make_phase_space_movie,
+)
+
+plot_beta(optics, save_path="beta.png")
+plot_emittance(optics, save_path="emittance.png")
+plot_transmission(df_raw, r_max=0.0819, save_path="transmission.png")
+
+# save all five figures at once
+plot_all(optics, df_raw, show=False, save="plots/")
+
+# phase-space GIF (one frame per station)
+make_phase_space_movie(df, out_path="plots/phase_space.gif", fps=5)
+```
+
+### bdsim_to_g4bl
+
+Converts a BDSIM-style DataFrame to G4BL/ICOOL track format for use with xboa.
+
+```python
+from analyse.bdsim_to_g4bl import bdsim_to_g4bl
+
+station_map = bdsim_to_g4bl(df, "output/output.txt")
+```
+
+Input DataFrame must have: `samplerName`, `trackID`, `SimName`, `partID`, `x`, `y`, `z`, `xp`, `yp`, `zp`, `p`, `T`, `weight`.
+
+Output format: space-separated, one particle per line, with ICOOL PID codes and time converted to seconds.
+
+### plot_channel.py
+
+Top-level script that wires loader → optics → plots. Can be used from the CLI or imported into a notebook.
+
+```python
+from plot_channel import run
+
+optics, df, dfAll = run(
+    "/path/to/sims",
+    pattern     = "*.txt",
+    s_offset    = 21.5,      # subtracted from S [mm]
+    r_max       = 0.0819,    # aperture cut [m]
+    s_max       = 100000,    # zoom to channel region [mm]
+    transmitted = True,
+    show        = True,      # display interactively
+    save        = "plots/",  # save to disk; None to skip
+    movie       = False,
+)
 ```
 
 ```bash
-python -m src.run --config config/channel.json
+python plot_channel.py /path/to/sims --s-offset 21.5 --r-max 0.0819 --save plots/
+python plot_channel.py /path/to/sims --show --no-save
+python plot_channel.py /path/to/sims --movie
 ```
