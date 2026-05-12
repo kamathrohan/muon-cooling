@@ -74,3 +74,19 @@ def g4bl_to_beamgen(input_path: str, output_path: str,
     np.savetxt(output_path, out, header=header, comments='')
 
     return len(out)
+
+def grab_rf_offsets_from_log(log_path: str) -> dict[str, float]:
+    """Parse RF time offsets from a G4BL log file.
+
+    Returns a dictionary mapping pillbox names to their time offsets (in ns).
+    """
+    import re
+    pattern = re.compile(r'pillbox (\S+): Time OK\s+timeOffset=([-\d.]+)')
+    offsets = {}
+    with open(log_path) as f:
+        for line in f:
+            m = pattern.search(line)
+            if m:
+                name, offset = m.group(1), float(m.group(2))
+                offsets[name] = offset
+    return offsets
